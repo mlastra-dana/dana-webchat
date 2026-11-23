@@ -1,5 +1,5 @@
-import logoColor from '../assets/brand/example-company-color.svg'
-import iconColor from '../assets/brand/example-icon-color.svg'
+import logoColor from '../assets/brand/example_brand_kit_2/logos/svg/example_company_color.svg'
+import iconColor from '../assets/brand/example_brand_kit_2/logos/svg/example_icon_color.svg'
 
 export const brand = {
   companyName: 'Example Company',

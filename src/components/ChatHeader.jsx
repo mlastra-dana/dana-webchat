@@ -19,6 +19,7 @@ export default function ChatHeader({ advisor }) {
       <section className="info-dialog" role="dialog" aria-modal="true" aria-labelledby="info-title" onClick={(event) => event.stopPropagation()}>
         <button className="dialog-close icon-button" type="button" aria-label="Cerrar información" onClick={() => setShowInfo(false)}><X size={20} /></button>
         <div className="dialog-mark"><ShieldCheck size={24} /></div>
+        <img className="dialog-logo" src={brand.logo} alt={brand.companyName} />
         <h2 id="info-title">Canal de atención digital</h2>
         <p>Esta conversación de demostración pertenece a {brand.companyName}. Los datos mostrados son ficticios y ninguna acción genera un pago real.</p>
         <button className="dialog-action" type="button" onClick={() => setShowInfo(false)}>Entendido</button>

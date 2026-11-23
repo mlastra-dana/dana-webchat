@@ -26,7 +26,7 @@ VITE_ENV=development
 
 Con `VITE_API_BASE_URL` vacío, `src/services/api.js` usa mocks en memoria. Para conectar `dana-webchat-api`, defina la URL base y adapte en ese archivo las rutas y el contrato de respuesta cuando el Lambda esté listo. Los métodos `getSession`, `getMessages`, `sendMessage` y `sendAction` ya están separados de la interfaz. La ruta `/c/:sessionToken` recibe un token opaco en el path; no incluya datos personales en la URL. No hay pagos reales ni carga de archivos al servidor en esta demo.
 
-La identidad visual está centralizada en `src/config/brand.js`; los SVG locales están en `src/assets/brand/`.
+La identidad visual está centralizada en `src/config/brand.js` y usa directamente los SVG del kit en `src/assets/brand/example_brand_kit_2/logos/svg/`.
 
 ## AWS Amplify Hosting
 
