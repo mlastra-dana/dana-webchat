@@ -1,6 +1,6 @@
 # DANA LinkChat
 
-PoC de conversación web empresarial adaptable a la identidad de cada cliente. Esta primera versión usa la marca de Example Company y demuestra un flujo de cobranza con datos ficticios.
+Conversación web empresarial adaptable a la identidad de cada cliente. Esta versión muestra sesiones reales de cobranza creadas por DANA y atendidas por `dana-webchat-api`.
 
 ## Tecnología y ejecución
 
@@ -12,19 +12,19 @@ npm run dev
 npm run build
 ```
 
-`npm run dev` abre la demo en `/` y también admite `/c/demo-session`. `npm run build` genera el sitio estático en `dist/`.
+Abra una sesión válida en `/c/:sessionToken`. La ruta `/` muestra el estado de sesión no disponible. `npm run build` genera el sitio estático en `dist/`.
 
 ## Configuración
 
 Copie `.env.example` a `.env` si necesita cambiar variables locales:
 
 ```env
-VITE_API_BASE_URL=
+VITE_API_BASE_URL=https://ts7l5pjnxnrs5ocu2ttjgrdb5y0zporq.lambda-url.us-east-1.on.aws
 VITE_APP_NAME=DANA LinkChat
 VITE_ENV=development
 ```
 
-Con `VITE_API_BASE_URL` vacío, `src/services/api.js` usa mocks en memoria. Para conectar `dana-webchat-api`, defina la URL base y adapte en ese archivo las rutas y el contrato de respuesta cuando el Lambda esté listo. Los métodos `getSession`, `getMessages`, `sendMessage` y `sendAction` ya están separados de la interfaz. La ruta `/c/:sessionToken` recibe un token opaco en el path; no incluya datos personales en la URL. No hay pagos reales ni carga de archivos al servidor en esta demo.
+`VITE_API_BASE_URL` es obligatoria y apunta a la Function URL de `dana-webchat-api`. El frontend carga `GET /sessions/{code}` y usa `session.messages` de la Lambda como fuente de verdad. Los mensajes y acciones se envían mediante `POST /sessions/{code}/messages` y `POST /sessions/{code}/actions`; no hay respuestas simuladas. La ruta `/c/:sessionToken` recibe un código opaco en el path; no incluya datos personales en la URL. Los adjuntos no están disponibles hasta que el backend los soporte. Configure la misma variable en AWS Amplify Hosting antes de compilar y desplegar.
 
 La identidad visual está centralizada en `src/config/brand.js` y usa directamente los SVG del kit en `src/assets/brand/example_brand_kit_2/logos/svg/`.
 
