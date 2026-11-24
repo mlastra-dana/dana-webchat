@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ChatHeader from '../components/ChatHeader'
 import ChatMessage from '../components/ChatMessage'
 import ChatComposer from '../components/ChatComposer'
@@ -32,6 +32,8 @@ export default function ChatPage({ sessionToken }) {
   const [actionUrl, setActionUrl] = useState('')
   const initialMessageCount = useRef(0)
   const scrollRef = useRef(null)
+  const nearBottomRef = useRef(true)
+  const scrollInitializedRef = useRef(false)
 
   useEffect(() => {
     let active = true
@@ -41,6 +43,8 @@ export default function ChatPage({ sessionToken }) {
     setError('')
     setActionUrl('')
     initialMessageCount.current = 0
+    nearBottomRef.current = true
+    scrollInitializedRef.current = false
 
     if (!sessionToken) {
       setLoading(false)
@@ -62,10 +66,35 @@ export default function ChatPage({ sessionToken }) {
     return () => { active = false }
   }, [sessionToken])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = scrollRef.current
-    if (element) element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' })
+    if (!element) return
+    if (!scrollInitializedRef.current || nearBottomRef.current) {
+      element.scrollTo({ top: element.scrollHeight, behavior: scrollInitializedRef.current ? 'smooth' : 'instant' })
+      scrollInitializedRef.current = true
+    }
   }, [session?.messages, session?.mode])
+
+  useEffect(() => {
+    if (!sessionToken || !['WAITING_AGENT', 'AGENT'].includes(session?.mode)) return
+    let active = true
+    let busy = false
+    async function refresh() {
+      if (document.visibilityState !== 'visible' || busy) return
+      busy = true
+      try { const next = await getSession(sessionToken); if (active) setSession(next) }
+      catch { /* Keep the last valid session during a transient polling failure. */ }
+      finally { busy = false }
+    }
+    const timer = setInterval(refresh, 2500)
+    document.addEventListener('visibilitychange', refresh)
+    return () => { active = false; clearInterval(timer); document.removeEventListener('visibilitychange', refresh) }
+  }, [sessionToken, session?.mode])
+
+  function trackScroll(event) {
+    const element = event.currentTarget
+    nearBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100
+  }
 
   async function applyResponse(response) {
     const nextSession = response?.session && Array.isArray(response.session.messages)
@@ -77,6 +106,7 @@ export default function ChatPage({ sessionToken }) {
 
   async function handleSend(text) {
     if (sending) return false
+    nearBottomRef.current = true
     setSending(true)
     setError('')
     try {
@@ -116,7 +146,7 @@ export default function ChatPage({ sessionToken }) {
   return <main className="app-shell">
     <div className="chat-window">
       <ChatHeader companyName={session.brand?.companyName} subtitle={session.brand?.subtitle} mode={session.mode} operatorName={session.assignedOperatorName} customerName={session.customer?.firstName} />
-      <div className="conversation-scroll" ref={scrollRef}>
+      <div className="conversation-scroll" ref={scrollRef} onScroll={trackScroll}>
         <div className="conversation-content" aria-live="polite" aria-relevant="additions">
           {session.messages.slice(0, summaryIndex).map(renderMessage)}
           {session.collection && <DebtCard collection={session.collection} />}

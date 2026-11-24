@@ -49,3 +49,36 @@ export async function sendAction(code, action) {
     body: JSON.stringify({ action }),
   })
 }
+
+function expectList(data, key) {
+  if (!Array.isArray(data?.[key])) throw new Error(`La API no devolvió ${key} en un formato válido.`)
+  return data[key]
+}
+
+export async function getOperators() {
+  return expectList(await request('/operators'), 'operators')
+}
+
+export async function createOperator(name, email) {
+  return request('/operators', { method: 'POST', body: JSON.stringify({ name, email }) })
+}
+
+export async function updateOperatorStatus(id, available) {
+  return request(`/operators/${encodeURIComponent(id)}/status`, { method: 'POST', body: JSON.stringify({ available }) })
+}
+
+export async function getOperatorQueue() {
+  return expectList(await request('/operator-queue'), 'sessions')
+}
+
+export async function takeSession(code, operatorId) {
+  return request(`${sessionPath(code)}/take`, { method: 'POST', body: JSON.stringify({ operatorId }) })
+}
+
+export async function sendOperatorMessage(code, operatorId, message) {
+  return request(`${sessionPath(code)}/operator-message`, { method: 'POST', body: JSON.stringify({ operatorId, message }) })
+}
+
+export async function returnToBot(code, operatorId) {
+  return request(`${sessionPath(code)}/return-to-bot`, { method: 'POST', body: JSON.stringify({ operatorId }) })
+}

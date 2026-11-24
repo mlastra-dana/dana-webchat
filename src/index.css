@@ -80,3 +80,78 @@ button:disabled { cursor: not-allowed; }
 @media (max-width: 640px) { .app-shell { display: block; padding: 0; background: #fff; }.chat-window { width: 100%; height: 100dvh; min-height: 0; border: 0; border-radius: 0; box-shadow: none; }.header-inner { min-height: 72px; padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top)); }.brand-avatar { width: 42px; height: 42px; border-radius: 13px; }.brand-avatar img { width: 36px; height: 32px; }.conversation-content { padding: 17px 14px 24px; }.message-bubble { max-width: 83%; }.card-row, .cta-row, .quick-actions { margin-left: 39px; }.quick-actions { width: calc(100% - 39px); }.quick-action { padding: 8px; font-size: 12px; }.composer { padding: 9px 12px max(12px, env(safe-area-inset-bottom)); }.powered-by { padding-top: 7px; } }
 @media (max-width: 360px) { .quick-actions { grid-template-columns: 1fr; }.header-subtitle { font-size: 11px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+/* Conversational proportions */
+.chat-window { --chat-content-width: 900px; width: min(100%, 1000px); height: calc(100dvh - 32px); min-height: 0; }
+.app-shell { padding: 16px; }
+.header-inner { min-height: 68px; padding: 8px 22px; }
+.brand-avatar { width: 42px; height: 42px; border-radius: 13px; }
+.brand-avatar img { width: 36px; height: 32px; }
+.conversation-scroll { scroll-behavior: auto; }
+.conversation-content { display: flex; flex-direction: column; justify-content: flex-start; padding: 20px 22px 16px; }
+.conversation-content > :first-child { margin-top: auto; }
+.message-row { margin-bottom: 10px; }
+.message-bubble { max-width: min(74%, 560px); padding: 9px 12px 7px; border-radius: 15px 15px 15px 5px; }
+.message-bubble-outgoing { border-radius: 15px 15px 5px 15px; }
+.message-bubble p { font-size: 14px; line-height: 1.4; }
+.message-time { margin-top: 3px; font-size: 10px; }
+.message-avatar { width: 28px; height: 28px; border-radius: 9px; }
+.message-avatar img { width: 25px; height: 23px; }
+.card-row { margin: 1px 0 10px 37px; }
+.debt-card { width: min(100%, 450px); padding: 13px 16px 13px; border-radius: 15px; }
+.debt-card-top { margin-bottom: 9px; }
+.debt-amount { margin: 1px 0 10px; font-size: 34px; }
+.debt-due { margin-top: 10px; }
+.debt-reference { margin-top: 6px; }
+.quick-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; width: min(calc(100% - 37px), 450px); margin: 2px 0 12px 37px; }
+.quick-action { min-height: 40px; padding: 7px 8px; border-radius: 10px; font-size: 12px; }
+.quick-action svg { width: 16px; height: 16px; }
+.system-message { margin: 9px auto 12px; padding: 7px 11px; }
+.composer { position: relative; padding: 7px 22px 11px; }
+.composer-controls { min-height: 48px; padding: 4px 5px; border-radius: 14px; }
+.attach-button, .message-input { height: 38px; }
+.send-button { width: 38px; height: 38px; border-radius: 10px; }
+.powered-by { padding-top: 6px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.attachment-menu-backdrop { position: fixed; inset: 0; z-index: 8; border: 0; background: transparent; cursor: default; }
+.attachment-menu { position: absolute; z-index: 9; bottom: calc(100% - 3px); left: 22px; width: min(255px, calc(100% - 44px)); padding: 8px; border: 1px solid #e8dff4; border-radius: 15px; background: white; box-shadow: 0 16px 40px rgba(25,17,51,.15); }
+.attachment-menu-heading { display: flex; align-items: center; justify-content: space-between; padding: 3px 4px 6px 9px; color: #5c4c7c; font-size: 12px; font-weight: 700; }
+.attachment-menu-heading button { width: 28px; height: 28px; color: #6c5f7c; }
+.attachment-option { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 8px 10px; border: 0; border-radius: 9px; background: white; color: #20162d; font-size: 13px; text-align: left; }
+.attachment-option svg { color: #6D28E0; }
+.attachment-option:hover, .attachment-option:focus-visible { background: #f3edff; }
+.media-preview { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0; margin-bottom: 8px; padding: 9px; border: 1px solid #e8dff4; border-radius: 12px; background: #fbfaff; }
+.media-preview img { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; }
+.media-preview-copy { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 2px; color: #20162d; font-size: 12px; }
+.media-preview-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-preview-copy span, .media-preview-copy small { color: #706b81; font-size: 11px; }
+.media-preview audio { width: min(100%, 280px); height: 36px; }
+.media-remove { flex: 0 0 auto; width: 32px; height: 32px; color: #6c5f7c; }
+.composer-error { margin-bottom: 7px; color: #a12031; font-size: 12px; }
+.recording-controls { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 4px 7px 4px 12px; border: 1px solid #ded8e9; border-radius: 14px; color: #4B16B6; font-size: 13px; font-weight: 650; }
+.recording-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #6D28E0; animation: typing 1s infinite; }
+.recording-controls > span:nth-child(2) { flex: 1; }
+.recording-controls button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 36px; padding: 7px 9px; border: 0; border-radius: 9px; background: #f3edff; color: #4B16B6; font-size: 12px; font-weight: 700; }
+.recording-controls .recording-finish { background: #4B16B6; color: white; }
+@media (max-width: 800px) { .app-shell { padding: 8px; } .chat-window { width: 100%; height: calc(100dvh - 16px); border-radius: 17px; } }
+@media (max-width: 640px) {
+  .app-shell { padding: 0; }
+  .chat-window { height: 100dvh; border-radius: 0; }
+  .header-inner { min-height: 60px; padding: max(7px, env(safe-area-inset-top)) 13px 7px; gap: 10px; }
+  .brand-avatar { width: 39px; height: 39px; }
+  .brand-avatar img { width: 34px; height: 30px; }
+  .header-name { font-size: 15px; }
+  .header-subtitle { gap: 6px; overflow: hidden; font-size: 11px; text-overflow: ellipsis; }
+  .conversation-content { padding: 14px 11px 12px; }
+  .message-bubble { max-width: 85%; }
+  .card-row, .quick-actions, .cta-row { margin-left: 35px; }
+  .debt-card { width: 100%; padding: 12px 13px; }
+  .debt-amount { font-size: 30px; }
+  .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); width: calc(100% - 35px); }
+  .quick-action { min-height: 42px; }
+  .composer { padding: 7px 10px max(9px, env(safe-area-inset-bottom)); }
+  .attachment-menu-backdrop { background: rgba(17,14,31,.35); }
+  .attachment-menu { position: fixed; right: 0; bottom: 0; left: 0; width: 100%; padding: 10px 12px max(13px, env(safe-area-inset-bottom)); border-radius: 17px 17px 0 0; }
+  .attachment-option { min-height: 48px; font-size: 14px; }
+}
+@media (max-width: 370px) { .quick-actions { grid-template-columns: 1fr; } .recording-controls { gap: 5px; font-size: 12px; } .recording-controls button { padding: 6px; } }

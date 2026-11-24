@@ -6,14 +6,15 @@ export default function ChatHeader({ companyName, subtitle, mode, operatorName, 
   const [showInfo, setShowInfo] = useState(false)
   const name = companyName || ''
   const knownBrand = name === brand.companyName
-  const agentLabel = mode === 'AGENT' ? (operatorName || 'Asesor disponible') : subtitle
+  const agentLabel = mode === 'AGENT' ? (operatorName ? `Atendido por ${operatorName}` : 'Atendido por un asesor') : subtitle
+  const stateLabel = mode === 'WAITING_AGENT' ? 'Buscando asesor' : 'En línea'
   return <>
     <header className="chat-header">
       <div className="header-inner">
         <div className="brand-avatar">{knownBrand ? <img src={brand.icon} alt="" /> : <span aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>}</div>
         <div className="header-copy">
           <div className="header-name">{name}<ShieldCheck size={16} aria-label="Canal oficial" className="verified-icon" /></div>
-          <div className="header-subtitle">{agentLabel}<span className="header-separator" /> <span className="online"><span className="online-dot" />En línea</span></div>
+          <div className="header-subtitle">{agentLabel}<span className="header-separator" /> <span className="online"><span className="online-dot" />{stateLabel}</span></div>
         </div>
         <button className="header-info icon-button" type="button" aria-label="Información de la conversación" onClick={() => setShowInfo(true)}><Info size={21} strokeWidth={1.8} /></button>
       </div>
