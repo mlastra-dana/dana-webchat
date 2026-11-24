@@ -131,7 +131,8 @@ export default function ChatPage({ sessionToken }) {
     if (!item?.text) return null
     const key = item.id || `${item.createdAt || 'message'}-${index}`
     if (item.role === 'assistant' || item.role === 'user') {
-      return <ChatMessage key={key} message={{ type: item.role === 'user' ? 'outgoing' : 'incoming', text: item.text, time: messageTime(item.createdAt) }} advisor={item.role === 'assistant' && session.mode === 'AGENT' && index >= initialMessageCount.current} companyName={session.brand?.companyName} operatorName={session.assignedOperatorName} />
+      const fromOperator = item.role === 'assistant' && (item.metadata?.source === 'operator' || Boolean(item.metadata?.operatorId))
+      return <ChatMessage key={key} message={{ type: item.role === 'user' ? 'outgoing' : 'incoming', text: item.text, time: messageTime(item.createdAt) }} advisor={fromOperator} companyName={session.brand?.companyName} operatorName={item.metadata?.operatorName || session.assignedOperatorName} />
     }
     return <SystemMessage key={key} text={item.text} />
   }
