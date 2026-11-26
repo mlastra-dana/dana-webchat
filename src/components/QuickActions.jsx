@@ -1,8 +1,7 @@
-import { ArrowLeft, CreditCard, FileText, Headset } from 'lucide-react'
+import { ArrowLeft, CreditCard, Headset } from 'lucide-react'
 
 const actions = {
   pay: { label: 'Pagar ahora', Icon: CreditCard },
-  detail: { label: 'Ver detalle', Icon: FileText },
   advisor: { label: 'Hablar con un asesor', Icon: Headset },
   back: { label: 'Volver al inicio', Icon: ArrowLeft },
 }

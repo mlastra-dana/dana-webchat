@@ -18,7 +18,7 @@ function waitLabel(dateValue, now) {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-export default function OperatorSidebar({ operator, queue, activeCode, currentSession, tab, onTab, onSelect, onTake, onStatus, onExit, onRefresh, busy, error, now }) {
+export default function OperatorSidebar({ operator, queue, activeCode, currentSession, tab, onTab, onSelect, onTake, onExit, onRefresh, busy, error, now }) {
   const assignedCode = operator.currentSessionCode || (currentSession?.mode === 'AGENT' && currentSession?.assignedOperatorId === operator.id ? currentSession.code : '')
   const assigned = assignedCode ? currentSession?.code === assignedCode ? currentSession : null : null
   const orderedQueue = [...queue].sort((a, b) => {
@@ -30,11 +30,11 @@ export default function OperatorSidebar({ operator, queue, activeCode, currentSe
     <div className="operator-sidebar-top">
       <div className="operator-brand-mark">D</div>
       <div className="operator-brand-copy"><strong>DANA LinkChat</strong><span>Panel de operadores</span></div>
-      <button className="operator-icon-button" type="button" aria-label="Salir del panel" title="Salir del panel" onClick={onExit}><LogOut size={17} /></button>
+      <button className="operator-icon-button" type="button" aria-label="Salir del panel" title="Salir del panel" onClick={onExit} disabled={busy}><LogOut size={17} /></button>
     </div>
     <div className="operator-profile">
       <div><span className="operator-profile-label">Operador</span><strong>{operator.name}</strong><small>{operator.email}</small></div>
-      <label className="operator-availability"><input type="checkbox" checked={Boolean(operator.available)} onChange={(event) => onStatus(event.target.checked)} disabled={busy || !operator.active || Boolean(operator.currentSessionCode)} /><span aria-hidden="true" className="operator-switch" /><span>{!operator.active ? 'Inactivo' : operator.currentSessionCode ? 'En atención' : operator.available ? 'Disponible' : 'No disponible'}</span></label>
+      <span className="operator-presence"><span className={operator.active && operator.available && !operator.currentSessionCode ? 'operator-presence-dot online' : 'operator-presence-dot'} aria-hidden="true" />{!operator.active ? 'Inactivo' : operator.currentSessionCode ? 'En atención' : operator.available ? 'Disponible' : 'No disponible'}</span>
     </div>
     <nav className="operator-tabs" aria-label="Panel de operadores">
       <button type="button" aria-current={tab === 'waiting' ? 'page' : undefined} className={tab === 'waiting' ? 'active' : ''} onClick={() => onTab('waiting')}><Headset size={16} />Cola <span>{queue.length}</span></button>

@@ -1,5 +1,5 @@
 import { Mic, Paperclip, Send, Square, Trash2, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import AttachmentMenu from './AttachmentMenu'
 import { attachmentTypes, formatFileSize, validateAttachment, MAX_AUDIO_BYTES } from '../config/media'
 
@@ -16,6 +16,7 @@ export default function ChatComposer({ onSend, disabled }) {
   const [recording, setRecording] = useState(false)
   const [seconds, setSeconds] = useState(0)
   const fileInput = useRef(null)
+  const messageInput = useRef(null)
   const selectedKind = useRef('document')
   const recorderRef = useRef(null)
   const streamRef = useRef(null)
@@ -37,6 +38,13 @@ export default function ChatComposer({ onSend, disabled }) {
     clearInterval(timerRef.current)
   }, [])
 
+  useLayoutEffect(() => {
+    const input = messageInput.current
+    if (!input) return
+    input.style.height = '38px'
+    input.style.height = `${Math.min(input.scrollHeight, 120)}px`
+  }, [value])
+
   async function submit(event) {
     event.preventDefault()
     const text = value.trim()
@@ -46,6 +54,12 @@ export default function ChatComposer({ onSend, disabled }) {
       return
     }
     if (await onSend(text)) setValue('')
+  }
+
+  function handleMessageKeyDown(event) {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+    event.preventDefault()
+    if (!event.repeat) event.currentTarget.form?.requestSubmit()
   }
 
   function chooseKind(kind) {
@@ -123,7 +137,7 @@ export default function ChatComposer({ onSend, disabled }) {
     {recording ? <div className="recording-controls" role="status"><span className="recording-dot" /> <span>Grabando {durationLabel(seconds)}</span><button type="button" onClick={() => finishRecording(true)} aria-label="Cancelar grabación"><Trash2 size={18} />Cancelar</button><button type="button" className="recording-finish" onClick={() => finishRecording()} aria-label="Finalizar grabación"><Square size={16} />Finalizar</button></div> : <div className="composer-controls">
       <button className="attach-button icon-button" type="button" aria-label="Adjuntar archivo" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)} disabled={disabled}><Paperclip size={21} strokeWidth={1.8} /></button>
       <input ref={fileInput} type="file" className="visually-hidden" tabIndex={-1} onChange={receiveFile} aria-label="Seleccionar archivo" />
-      <input className="message-input" value={value} onChange={(event) => setValue(event.target.value)} aria-label="Escribe un mensaje" placeholder="Escribe un mensaje..." disabled={disabled} />
+      <textarea ref={messageInput} className="message-input" rows={1} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={handleMessageKeyDown} aria-label="Escribe un mensaje" placeholder="Escribe un mensaje..." disabled={disabled} />
       {value.trim() ? <button className="send-button" type="submit" aria-label="Enviar mensaje" disabled={disabled}><Send size={19} strokeWidth={2} /></button> : <button className="send-button" type="button" aria-label="Grabar nota de voz" onClick={startRecording} disabled={disabled}><Mic size={20} strokeWidth={1.9} /></button>}
     </div>}
     {menuOpen && <AttachmentMenu onSelect={chooseKind} onClose={() => setMenuOpen(false)} />}

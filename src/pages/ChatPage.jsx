@@ -11,9 +11,9 @@ import PaymentValidationNotice from '../components/PaymentValidationNotice'
 import AudioCall from '../components/AudioCall'
 import { getSession, readSession, sendAction, sendMessage, uploadPaymentProof } from '../services/api'
 
-const actions = { pay: 'PAY_NOW', detail: 'VIEW_DETAIL', advisor: 'TALK_TO_AGENT', back: 'BACK_HOME' }
-const quickActions = ['pay', 'detail', 'advisor']
-const actionKeys = { PAY_NOW: 'pay', VIEW_DETAIL: 'detail', TALK_TO_AGENT: 'advisor', BACK_HOME: 'back' }
+const actions = { pay: 'PAY_NOW', advisor: 'TALK_TO_AGENT', back: 'BACK_HOME' }
+const quickActions = ['pay', 'advisor']
+const actionKeys = { PAY_NOW: 'pay', TALK_TO_AGENT: 'advisor', BACK_HOME: 'back' }
 
 function messageTime(createdAt) {
   const date = new Date(createdAt)

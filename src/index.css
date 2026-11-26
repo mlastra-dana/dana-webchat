@@ -11,7 +11,7 @@
 :root { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #0F0F1F; background: #f4f3f9; font-synthesis: none; }
 * { box-sizing: border-box; }
 html, body, #root { width: 100%; min-height: 100%; margin: 0; }
-button, input { font: inherit; }
+button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 :focus-visible { outline: 3px solid #A779FF; outline-offset: 3px; }
@@ -103,12 +103,13 @@ button:disabled { cursor: not-allowed; }
 .debt-amount { margin: 1px 0 10px; font-size: 34px; }
 .debt-due { margin-top: 10px; }
 .debt-reference { margin-top: 6px; }
-.quick-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; width: min(calc(100% - 37px), 450px); margin: 2px 0 12px 37px; }
+.quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; width: min(calc(100% - 37px), 450px); margin: 2px 0 12px 37px; }
 .quick-action { min-height: 40px; padding: 7px 8px; border-radius: 10px; font-size: 12px; }
 .quick-action svg { width: 16px; height: 16px; }
 .system-message { margin: 9px auto 12px; padding: 7px 11px; }
 .composer { position: relative; padding: 7px 22px 11px; }
 .composer-controls { min-height: 48px; padding: 4px 5px; border-radius: 14px; }
+.message-input { max-height: 120px; padding: 9px 0; resize: none; overflow-y: auto; line-height: 20px; }
 .attach-button, .message-input { height: 38px; }
 .send-button { width: 38px; height: 38px; border-radius: 10px; }
 .powered-by { padding-top: 6px; }
@@ -193,14 +194,9 @@ button:disabled { cursor: not-allowed; }
 .operator-profile-label { color: #817b8e; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
 .operator-profile strong { overflow: hidden; color: #20162d; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .operator-profile small { overflow: hidden; color: #817b8e; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.operator-availability { display: flex; align-items: center; align-self: center; gap: 5px; flex: 0 0 auto; cursor: pointer; color: #625a6e; font-size: 11px; }
-.operator-availability input { position: absolute; opacity: 0; }
-.operator-switch { position: relative; width: 31px; height: 18px; border-radius: 20px; background: #c8c2d1; transition: background .15s; }
-.operator-switch::after { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: white; content: ''; transition: transform .15s; }
-.operator-availability input:checked + .operator-switch { background: #6D28E0; }
-.operator-availability input:checked + .operator-switch::after { transform: translateX(13px); }
-.operator-availability input:focus-visible + .operator-switch { outline: 3px solid #A779FF; outline-offset: 3px; }
-.operator-availability input:disabled + .operator-switch { opacity: .55; }
+.operator-presence { display: inline-flex; align-items: center; align-self: center; gap: 6px; flex: 0 0 auto; color: #625a6e; font-size: 11px; }
+.operator-presence-dot { width: 8px; height: 8px; border-radius: 50%; background: #bcb5c9; }
+.operator-presence-dot.online { background: #6D28E0; }
 .operator-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 10px 12px 0; border-bottom: 1px solid #eeeaf3; }
 .operator-tabs button { min-height: 39px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #706b81; font-size: 12px; font-weight: 750; }
 .operator-tabs button.active { border-color: #6D28E0; color: #4B16B6; }
@@ -287,8 +283,6 @@ button:disabled { cursor: not-allowed; }
 .audio-call-actions button:disabled { opacity: .55; }
 .audio-call-error { flex-basis: 100%; color: #a12031; }
 @media (max-width: 640px) { .audio-call { align-items: flex-start; flex-direction: column; padding: 8px 12px; } }
-.operator-availability { position: relative; }
-.operator-availability input { top: 50%; left: 0; z-index: 1; width: 31px; height: 18px; margin: 0; transform: translateY(-50%); cursor: pointer; }
 .proof-card { width: min(calc(100% - 37px), 450px); margin: 4px 0 14px 37px; padding: 14px; border: 1px solid #e8dff4; border-radius: 14px; background: white; box-shadow: 0 6px 22px rgba(39,21,73,.055); }
 .proof-card-heading { display: flex; align-items: center; gap: 8px; color: #4B16B6; font-size: 13px; }
 .proof-card p { margin: 7px 0 13px; color: #625a6e; font-size: 12px; line-height: 1.45; }
