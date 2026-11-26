@@ -1,49 +1,25 @@
 # Lambda de DANA LinkChat
 
-`lambda_function.py` parte del archivo `dana-webchat-api-v1.4.py` entregado por la usuaria. Conserva las rutas existentes y completa el circuito de comprobantes. El código desplegado actualmente en `dana-webchat-api` es una versión anterior sin rutas de media.
+`lambda_function.py` contiene la v1.6 entregada por la usuaria. La v1.6 está solo en el repositorio local; la función AWS conserva la versión desplegada anteriormente.
 
-## Recorrido
+## Llamadas de audio
 
-1. `POST /sessions/{code}/actions` con `PAY_NOW` cambia `FLOW_STEP` a `WAITING_PAYMENT_PROOF`.
-2. `POST /sessions/{code}/media/presign` recibe `fileName`, `contentType`, `size` y `sender: "user"`; devuelve `uploadUrl`, `mediaKey` y `uploadHeaders`.
-3. El navegador hace `PUT` del archivo a S3 con exactamente los headers firmados.
-4. `POST /sessions/{code}/media/confirm` recibe los mismos datos y `mediaKey`. Lambda comprueba el objeto y llama a Bedrock Converse para imágenes JPG, PNG o WebP.
-5. Las reglas deciden `MATCH` → `PAYMENT_MATCHED`, `MISMATCH` → `PAYMENT_MISMATCH` con nuevo intento, o `REVIEW` → `PAYMENT_REVIEW` + `WAITING_AGENT`. `RECEIPT_MATCHED` significa que los datos visibles coinciden; no confirma liquidación bancaria.
+La API incluye `POST /sessions/{code}/call/{start|accept|join|reject|end}`. El inicio requiere una sesión en modo `AGENT`; el operador debe estar asignado a ella. Lambda devuelve `joinInfo` al participante que inicia, atiende o se reconecta. El frontend usa Amazon Chime SDK for JavaScript para capturar el micrófono y reproducir el audio. `GET /sessions/{code}` expone el estado público en `session.call` para actualizar ambas pantallas.
 
-Los comprobantes se limitan a 3.750.000 bytes para respetar el límite de imágenes de Converse. La confirmación del mismo `mediaKey` es idempotente. Una moneda distinta es `MISMATCH`; datos incompletos o baja confianza producen `REVIEW`.
+`CHIME_MEDIA_REGION=us-east-1` y la policy inline `DANALinkChatChimeSDKAccess` ya estaban configuradas en AWS. La policy concede solo `CreateMeeting`, `CreateAttendee`, `GetMeeting` y `DeleteMeeting`; su copia está en `aws/chime-iam-policy.json`.
 
-## Datos de verificación enviados por DANA
+## Media y despliegue
 
-Al crear una sesión, DANA envía el saldo y la moneda habituales y puede añadir `paymentVerification`. Para que un comprobante llegue a `MATCH` automáticamente, DANA debe aportar al menos un identificador comprobable: número de operación, referencia de pago, teléfono, documento o número de cuenta del destinatario. El nombre del destinatario no es obligatorio.
+El script `deploy.sh` conserva el bucket existente `dc-files-vzla-demo`, comprueba la cuenta AWS y las policies presentes, configura `MEDIA_PREFIX=dana-linkchat` y otras variables de media, y publica el código local. No crea buckets ni cambia CORS o permisos de otros recursos. La policy de S3 existente limita el acceso a `dana-linkchat/*`.
 
-```json
-{
-  "firstName": "Ana",
-  "balance": 200,
-  "currency": "USD",
-  "paymentVerification": {
-    "phone": "0412-1234567",
-    "bank": "Banco de ejemplo"
-  }
-}
-```
+La v1.6 compara el monto y la moneda extraídos del comprobante con los de la sesión, sin exigir nombre, banco ni referencia. Si el archivo no parece un comprobante, devuelve `INVALID_RECEIPT` y permite otro intento. El código no usa `paymentVerification` por sesión. Las pruebas `test_payment_validation.py` aún describen una revisión anterior y fallan con la v1.6. `PAYMENT_MATCHED` indica coincidencia documental; no confirma liquidación bancaria.
 
-Campos opcionales de `paymentVerification`: `operationNumber`, `reference`, `bank`, `phone`, `accountNumber`, `recipientId`, `recipient`. Lambda compara todos los que DANA envíe con lo extraído del comprobante. `reference` debe ser una **referencia de pago**, no la referencia de cobranza general en `collection.reference`; esta última no se compara automáticamente. Si falta un identificador verificable o el comprobante no lo muestra, el caso va a `REVIEW`. Una diferencia explícita produce `MISMATCH` y permite otro comprobante. `MATCH` solo indica coincidencia documental; la liquidación debe confirmarse con el proveedor de pagos.
-
-## Preparación de AWS
-
-La función existente usa `python3.15`, `lambda_function.lambda_handler` y el modelo `amazon.nova-lite-v1:0`. Antes del despliegue le faltan las variables `MEDIA_*`, un bucket S3 y permisos para objetos. También tiene un timeout de 3 segundos, insuficiente para validar imágenes con Bedrock.
-
-`deploy.sh` prepara un bucket privado `dana-webchat-receipts-905418296062-us-east-1`, cifrado SSE-S3, CORS restringido al origen Amplify actual y a Vite local, y una política IAM limitada a `receipts/*`. Después añade las variables de media, ajusta Lambda a 60 segundos y 256 MB y publica el código. Conserva las variables existentes. **No ejecutar sin aprobar el despliegue en AWS.**
-
-El script no configura destinatarios globales. La verificación usa los valores que DANA proporciona en cada sesión.
-
-El bucket CORS incluido usa el origen Amplify detectado el 26 de noviembre de 2026. Si cambia el dominio de producción, actualice `aws/media-cors.json` antes de desplegar. El script no configura una política de retención: defínala según los requisitos legales y operativos antes de usar comprobantes reales.
-
-## Comprobaciones locales
+## Verificación
 
 ```bash
-python3 -m unittest discover -s backend -p 'test_*.py' -v
 python3 -m py_compile backend/lambda_function.py
 bash -n backend/deploy.sh
+npm run build
 ```
+
+`python3 backend/live_chime_smoke.py` prueba la API real con una sesión y un operador ficticios, crea y finaliza una reunión Chime y borra los registros de prueba. Requiere credenciales AWS con permiso para borrar esos registros. No comprueba el audio entre dos dispositivos; eso requiere dos navegadores con micrófonos.

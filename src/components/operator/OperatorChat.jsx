@@ -1,17 +1,13 @@
-import { ArrowLeft, Info, Phone, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Info, RotateCcw } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ChatComposer from '../ChatComposer'
 import CustomerContext from './CustomerContext'
+import AudioCall from '../AudioCall'
 import { getSession, readSession, sendOperatorMessage } from '../../services/api'
 
 function messageTime(createdAt) {
   const date = new Date(createdAt)
   return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat('es-VE', { hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
-}
-
-function telephone(value) {
-  if (typeof value !== 'string' || !/^\+?[\d\s().-]{6,25}$/.test(value)) return ''
-  return value.replace(/[^\d+]/g, '')
 }
 
 export default function OperatorChat({ code, operator, onBack, onTake, onReturn, onSession, busy, actionError }) {
@@ -78,15 +74,15 @@ export default function OperatorChat({ code, operator, onBack, onTake, onReturn,
   }
 
   const assigned = session?.mode === 'AGENT' && String(session.assignedOperatorId || '') === operator.id
-  const phone = telephone(session?.customer?.phone || session?.customer?.phoneNumber || session?.customer?.mobilePhone || session?.customer?.mobile || session?.customer?.telephone || '')
+  function updateSession(next) { setSession(next); onSession(next) }
   return <section className="operator-chat">
     <header className="operator-chat-header">
       <button type="button" className="operator-back operator-icon-button" aria-label="Volver a conversaciones" onClick={onBack}><ArrowLeft size={20} /></button>
       <div className="operator-chat-heading"><strong>{session?.customer?.firstName || (loading ? 'Cargando conversación...' : 'Conversación')}</strong><span>{session?.mode === 'AGENT' ? 'En atención' : session?.mode === 'WAITING_AGENT' ? 'Esperando asesor' : session?.mode === 'BOT' ? 'Atendido por el bot' : `Sesión ${code}`}</span></div>
-      {phone ? <a className="operator-icon-button" href={`tel:${phone}`} aria-label="Llamar" title={`Llamar a ${phone}`}><Phone size={19} /></a> : <span className="operator-call-unavailable" title="Teléfono no disponible"><button type="button" className="operator-icon-button" aria-label="Llamar: teléfono no disponible" disabled><Phone size={19} /></button></span>}
       <button type="button" className="operator-icon-button" aria-label="Ver contexto del cliente" title="Ver contexto" onClick={() => setShowContext((open) => !open)} disabled={!session}><Info size={19} /></button>
       {assigned && <button type="button" className="operator-return-button" onClick={() => onReturn(code)} disabled={busy || sending}><RotateCcw size={16} /><span>Devolver al bot</span></button>}
     </header>
+    {session && <AudioCall code={code} session={session} sender="operator" operatorId={operator.id} onSession={updateSession} />}
     <div className={`operator-chat-body ${showContext ? 'operator-context-open' : ''}`}>
       <div className="operator-message-scroll" ref={scrollRef} onScroll={trackScroll}>
         {loading && <div className="operator-chat-state">Cargando historial...</div>}

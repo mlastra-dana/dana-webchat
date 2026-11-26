@@ -6,6 +6,7 @@ function formatMoney(value, currency) {
 
 const statusLabels = { PENDING: 'Pendiente', PAID: 'Pagado', OVERDUE: 'Vencido' }
 const modeLabels = { BOT: 'Bot', WAITING_AGENT: 'Esperando asesor', AGENT: 'Atención humana' }
+const validationLabels = { MATCH: 'Coincide', MISMATCH: 'No coincide', REVIEW: 'Requiere revisión', INVALID_RECEIPT: 'Archivo no válido' }
 
 export default function CustomerContext({ session, onClose }) {
   const collection = session.collection || {}
@@ -20,7 +21,7 @@ export default function CustomerContext({ session, onClose }) {
       <div><dt>Referencia</dt><dd>{collection.reference || '—'}</dd></div>
       <div><dt>Estado</dt><dd>{statusLabels[collection.status] || collection.status || '—'}</dd></div>
       <div><dt>Modo</dt><dd>{modeLabels[session.mode] || session.mode || '—'}</dd></div>
-      {validation && <div><dt>Comprobante</dt><dd>{validation.result === 'MATCH' ? 'Coincide' : validation.result === 'MISMATCH' ? 'No coincide' : 'Revisión'}</dd></div>}
+      {validationLabels[validation?.result] && <div><dt>Validación del comprobante</dt><dd>{validationLabels[validation.result]}</dd></div>}
       {validation?.extracted?.amount != null && <div><dt>Monto detectado</dt><dd>{validation.extracted.currency || collection.currency || ''} {validation.extracted.amount}</dd></div>}
     </dl>
   </section>

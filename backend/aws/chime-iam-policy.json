@@ -1,0 +1,16 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DANALinkChatChimeMeetings",
+      "Effect": "Allow",
+      "Action": [
+        "chime:CreateMeeting",
+        "chime:CreateAttendee",
+        "chime:GetMeeting",
+        "chime:DeleteMeeting"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

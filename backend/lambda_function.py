@@ -13,7 +13,6 @@ from decimal import Decimal
 import boto3
 from botocore.config import Config
 
-
 # CONFIGURACION
 
 logger = logging.getLogger()
@@ -55,10 +54,8 @@ RECEIPT_CONFIDENCE_THRESHOLD = float(
     required_env("RECEIPT_CONFIDENCE_THRESHOLD")
 )
 
-PAYMENT_RECIPIENT_NAME = os.getenv("PAYMENT_RECIPIENT_NAME", "").strip()
-PAYMENT_RECIPIENT_BANK = os.getenv("PAYMENT_RECIPIENT_BANK", "").strip()
-PAYMENT_RECIPIENT_PHONE = os.getenv("PAYMENT_RECIPIENT_PHONE", "").strip()
-PAYMENT_RECIPIENT_ID = os.getenv("PAYMENT_RECIPIENT_ID", "").strip()
+CHIME_MEDIA_REGION = required_env("CHIME_MEDIA_REGION")
+
 
 boto_config = Config(
     region_name=AWS_REGION,
@@ -77,6 +74,17 @@ s3 = boto3.client(
     config=Config(
         region_name=AWS_REGION,
         signature_version="s3v4",
+        connect_timeout=10,
+        read_timeout=30,
+        retries={"max_attempts": 2, "mode": "standard"},
+    ),
+)
+
+chime_meetings = boto3.client(
+    "chime-sdk-meetings",
+    region_name=AWS_REGION,
+    config=Config(
+        region_name=AWS_REGION,
         connect_timeout=10,
         read_timeout=30,
         retries={"max_attempts": 2, "mode": "standard"},
@@ -173,6 +181,16 @@ def deep_decimal_to_native(obj):
         if obj == obj.to_integral():
             return int(obj)
         return float(obj)
+    return obj
+
+
+def deep_native_to_decimal(obj):
+    if isinstance(obj, list):
+        return [deep_native_to_decimal(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: deep_native_to_decimal(v) for k, v in obj.items()}
+    if isinstance(obj, float):
+        return Decimal(str(obj))
     return obj
 
 
@@ -372,6 +390,356 @@ def parse_json_object(text):
     return json.loads(raw)
 
 
+def call_public_view(session):
+    call = deep_decimal_to_native(session.get("call") or {})
+    if not call:
+        return {
+            "status": "IDLE",
+            "initiatedBy": "",
+            "startedAt": None,
+            "acceptedAt": None,
+            "endedAt": None,
+        }
+
+    return {
+        "status": call.get("status") or "IDLE",
+        "initiatedBy": call.get("initiatedBy") or "",
+        "initiatedByName": call.get("initiatedByName") or "",
+        "startedAt": call.get("startedAt"),
+        "acceptedAt": call.get("acceptedAt"),
+        "endedAt": call.get("endedAt"),
+        "endedBy": call.get("endedBy") or "",
+    }
+
+
+def chime_join_payload(meeting, attendee):
+    return {
+        "meeting": deep_decimal_to_native(meeting),
+        "attendee": deep_decimal_to_native(attendee),
+    }
+
+
+def get_active_meeting(session):
+    call = session.get("call") or {}
+    meeting_id = clean_text(call.get("meetingId"), 128)
+    if not meeting_id:
+        return None
+
+    try:
+        result = chime_meetings.get_meeting(MeetingId=meeting_id)
+        return result.get("Meeting")
+    except Exception:
+        logger.exception("No se pudo obtener Chime meeting=%s", meeting_id)
+        return None
+
+
+def validate_call_actor(session, data):
+    sender = clean_text(data.get("sender") or "user", 20).lower()
+
+    if sender == "user":
+        return "user", ""
+
+    if sender != "operator":
+        raise ValueError("invalid_sender")
+
+    operator_id = clean_text(data.get("operatorId"), 80)
+    if not operator_id:
+        raise ValueError("operatorId_required")
+
+    if session.get("MODE") != "AGENT":
+        raise PermissionError("session_not_in_agent_mode")
+
+    if session.get("assignedOperatorId") != operator_id:
+        raise PermissionError("operator_not_assigned")
+
+    return "operator", operator_id
+
+
+def create_chime_attendee(meeting_id, external_user_id):
+    result = chime_meetings.create_attendee(
+        MeetingId=meeting_id,
+        ExternalUserId=clean_text(external_user_id, 64),
+    )
+    return result.get("Attendee") or {}
+
+
+def start_call(code, data):
+    session = get_session(code)
+    if not session:
+        return 404, {"success": False, "error": "session_not_found"}
+
+    try:
+        sender, operator_id = validate_call_actor(session, data)
+    except ValueError as exc:
+        return 400, {"success": False, "error": str(exc)}
+    except PermissionError as exc:
+        return 403, {"success": False, "error": str(exc)}
+
+    current_call = session.get("call") or {}
+    if current_call.get("status") in {"RINGING", "IN_CALL"}:
+        return 409, {
+            "success": False,
+            "error": "call_already_active",
+            "call": call_public_view(session),
+        }
+
+    if session.get("MODE") != "AGENT":
+        return 409, {
+            "success": False,
+            "error": "operator_required_for_call",
+        }
+
+    meeting_result = chime_meetings.create_meeting(
+        ClientRequestToken=uuid.uuid4().hex,
+        ExternalMeetingId=f"linkchat-{clean_text(code, 40)}",
+        MediaRegion=CHIME_MEDIA_REGION,
+        MeetingFeatures={
+            "Video": {"MaxResolution": "None"},
+            "Content": {"MaxResolution": "None"},
+        },
+    )
+    meeting = meeting_result.get("Meeting") or {}
+    meeting_id = meeting.get("MeetingId")
+    if not meeting_id:
+        return 502, {"success": False, "error": "chime_meeting_not_created"}
+
+    initiator_name = (
+        session.get("assignedOperatorName", "")
+        if sender == "operator"
+        else (session.get("customer") or {}).get("firstName", "")
+    )
+
+    session["call"] = {
+        "status": "RINGING",
+        "initiatedBy": sender,
+        "initiatedByName": initiator_name,
+        "meetingId": meeting_id,
+        "externalMeetingId": meeting.get("ExternalMeetingId"),
+        "mediaRegion": meeting.get("MediaRegion") or CHIME_MEDIA_REGION,
+        "startedAt": now_iso(),
+        "acceptedAt": None,
+        "endedAt": None,
+        "endedBy": "",
+    }
+
+    session["messages"].append(
+        make_message(
+            "system",
+            f"{initiator_name or 'Un participante'} inicio una llamada de audio.",
+            metadata={
+                "event": "CALL_RINGING",
+                "initiatedBy": sender,
+            },
+        )
+    )
+    save_session(session)
+
+    attendee = create_chime_attendee(
+        meeting_id,
+        f"{sender}-{operator_id or code}-{uuid.uuid4().hex[:8]}",
+    )
+
+    return 200, {
+        "success": True,
+        "call": call_public_view(session),
+        "joinInfo": chime_join_payload(meeting, attendee),
+        "session": session_public_view(session),
+    }
+
+
+def accept_call(code, data):
+    session = get_session(code)
+    if not session:
+        return 404, {"success": False, "error": "session_not_found"}
+
+    try:
+        sender, operator_id = validate_call_actor(session, data)
+    except ValueError as exc:
+        return 400, {"success": False, "error": str(exc)}
+    except PermissionError as exc:
+        return 403, {"success": False, "error": str(exc)}
+
+    call = session.get("call") or {}
+    if call.get("status") != "RINGING":
+        return 409, {
+            "success": False,
+            "error": "call_not_ringing",
+            "call": call_public_view(session),
+        }
+
+    if sender == call.get("initiatedBy"):
+        return 409, {
+            "success": False,
+            "error": "initiator_cannot_accept_own_call",
+        }
+
+    meeting = get_active_meeting(session)
+    if not meeting:
+        session["call"]["status"] = "ENDED"
+        session["call"]["endedAt"] = now_iso()
+        session["call"]["endedBy"] = "system"
+        save_session(session)
+        return 410, {"success": False, "error": "call_meeting_expired"}
+
+    attendee = create_chime_attendee(
+        meeting["MeetingId"],
+        f"{sender}-{operator_id or code}-{uuid.uuid4().hex[:8]}",
+    )
+
+    session["call"]["status"] = "IN_CALL"
+    session["call"]["acceptedAt"] = now_iso()
+    session["messages"].append(
+        make_message(
+            "system",
+            "La llamada de audio fue atendida.",
+            metadata={"event": "CALL_ACCEPTED"},
+        )
+    )
+    save_session(session)
+
+    return 200, {
+        "success": True,
+        "call": call_public_view(session),
+        "joinInfo": chime_join_payload(meeting, attendee),
+        "session": session_public_view(session),
+    }
+
+
+def join_call(code, data):
+    session = get_session(code)
+    if not session:
+        return 404, {"success": False, "error": "session_not_found"}
+
+    try:
+        sender, operator_id = validate_call_actor(session, data)
+    except ValueError as exc:
+        return 400, {"success": False, "error": str(exc)}
+    except PermissionError as exc:
+        return 403, {"success": False, "error": str(exc)}
+
+    call = session.get("call") or {}
+    if call.get("status") not in {"RINGING", "IN_CALL"}:
+        return 409, {
+            "success": False,
+            "error": "call_not_active",
+            "call": call_public_view(session),
+        }
+
+    meeting = get_active_meeting(session)
+    if not meeting:
+        return 410, {"success": False, "error": "call_meeting_expired"}
+
+    attendee = create_chime_attendee(
+        meeting["MeetingId"],
+        f"{sender}-{operator_id or code}-{uuid.uuid4().hex[:8]}",
+    )
+
+    return 200, {
+        "success": True,
+        "call": call_public_view(session),
+        "joinInfo": chime_join_payload(meeting, attendee),
+        "session": session_public_view(session),
+    }
+
+
+def reject_call(code, data):
+    session = get_session(code)
+    if not session:
+        return 404, {"success": False, "error": "session_not_found"}
+
+    try:
+        sender, operator_id = validate_call_actor(session, data)
+    except ValueError as exc:
+        return 400, {"success": False, "error": str(exc)}
+    except PermissionError as exc:
+        return 403, {"success": False, "error": str(exc)}
+
+    call = session.get("call") or {}
+    if call.get("status") != "RINGING":
+        return 409, {
+            "success": False,
+            "error": "call_not_ringing",
+            "call": call_public_view(session),
+        }
+
+    meeting_id = clean_text(call.get("meetingId"), 128)
+    if meeting_id:
+        try:
+            chime_meetings.delete_meeting(MeetingId=meeting_id)
+        except Exception:
+            logger.exception("No se pudo borrar meeting rechazado=%s", meeting_id)
+
+    session["call"]["status"] = "REJECTED"
+    session["call"]["endedAt"] = now_iso()
+    session["call"]["endedBy"] = sender
+    session["messages"].append(
+        make_message(
+            "system",
+            "La llamada de audio fue rechazada.",
+            metadata={
+                "event": "CALL_REJECTED",
+                "rejectedBy": sender,
+            },
+        )
+    )
+    save_session(session)
+
+    return 200, {
+        "success": True,
+        "call": call_public_view(session),
+        "session": session_public_view(session),
+    }
+
+
+def end_call(code, data):
+    session = get_session(code)
+    if not session:
+        return 404, {"success": False, "error": "session_not_found"}
+
+    try:
+        sender, operator_id = validate_call_actor(session, data)
+    except ValueError as exc:
+        return 400, {"success": False, "error": str(exc)}
+    except PermissionError as exc:
+        return 403, {"success": False, "error": str(exc)}
+
+    call = session.get("call") or {}
+    if call.get("status") not in {"RINGING", "IN_CALL"}:
+        return 409, {
+            "success": False,
+            "error": "call_not_active",
+            "call": call_public_view(session),
+        }
+
+    meeting_id = clean_text(call.get("meetingId"), 128)
+    if meeting_id:
+        try:
+            chime_meetings.delete_meeting(MeetingId=meeting_id)
+        except Exception:
+            logger.exception("No se pudo borrar meeting=%s", meeting_id)
+
+    session["call"]["status"] = "ENDED"
+    session["call"]["endedAt"] = now_iso()
+    session["call"]["endedBy"] = sender
+    session["messages"].append(
+        make_message(
+            "system",
+            "La llamada de audio finalizo.",
+            metadata={
+                "event": "CALL_ENDED",
+                "endedBy": sender,
+            },
+        )
+    )
+    save_session(session)
+
+    return 200, {
+        "success": True,
+        "call": call_public_view(session),
+        "session": session_public_view(session),
+    }
+
+
 def session_public_view(session):
     session = deep_decimal_to_native(session)
 
@@ -392,6 +760,7 @@ def session_public_view(session):
         ],
         "paymentValidation": session.get("paymentValidation"),
         "ui": build_ui_state(session),
+        "call": call_public_view(session),
         "createdAt": session.get("createdAt"),
         "expiresAt": session.get("expireAt"),
     }
@@ -450,7 +819,7 @@ def get_session(code):
 def save_session(session):
     session["messages"] = trim_messages(session.get("messages", []))
     session["updatedAt"] = now_iso()
-    session_table.put_item(Item=session)
+    session_table.put_item(Item=deep_native_to_decimal(session))
     return session
 
 
@@ -519,6 +888,18 @@ def create_session(data):
         "PROCESS": "COLLECTIONS",
         "FLOW_STEP": "HOME",
         "paymentValidation": None,
+        "call": {
+            "status": "IDLE",
+            "initiatedBy": "",
+            "initiatedByName": "",
+            "meetingId": "",
+            "externalMeetingId": "",
+            "mediaRegion": "",
+            "startedAt": None,
+            "acceptedAt": None,
+            "endedAt": None,
+            "endedBy": "",
+        },
         "externalId": external_id,
         "customer": {
             "firstName": first_name,
@@ -964,11 +1345,14 @@ Devuelve SOLO un objeto JSON valido, sin markdown, con esta forma:
 
 Reglas:
 - No inventes datos que no sean visibles.
-- amount debe ser numero sin simbolos cuando sea legible.
-- currency debe ser un codigo o abreviatura legible, por ejemplo VES o USD.
+- amount debe representar el monto pagado y ser numero sin simbolos cuando sea legible.
+- currency debe ser la moneda visible o inferible directamente del comprobante, por ejemplo VES o USD.
 - confidence debe estar entre 0 y 1.
 - isPaymentReceipt solo debe ser true si la imagen parece realmente un comprobante,
   recibo o confirmacion de una operacion de pago.
+- El banco de origen puede ser cualquiera.
+- No asumas que la referencia bancaria debe coincidir con la referencia de deuda.
+- payer, recipient, bank, phone y reference son informativos para esta demostracion.
 """.strip()
 
     result = bedrock_runtime.converse(
@@ -1018,74 +1402,104 @@ def text_matches(expected, actual):
     return expected_norm in actual_norm or actual_norm in expected_norm
 
 
+def normalize_amount(value):
+    if value in (None, ""):
+        return None
+
+    text = clean_text(value, 80)
+    if not text:
+        return None
+
+    text = (
+        text.replace("Bs.", "")
+        .replace("Bs", "")
+        .replace("VES", "")
+        .replace("USD", "")
+        .replace("$", "")
+        .replace(" ", "")
+    )
+
+    if "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            text = text.replace(".", "").replace(",", ".")
+        else:
+            text = text.replace(",", "")
+    elif "," in text:
+        parts = text.split(",")
+        if len(parts[-1]) in {1, 2}:
+            text = "".join(parts[:-1]) + "." + parts[-1]
+        else:
+            text = text.replace(",", "")
+    elif "." in text:
+        parts = text.split(".")
+        if len(parts) > 2:
+            text = "".join(parts[:-1]) + "." + parts[-1]
+        elif len(parts[-1]) == 3:
+            text = text.replace(".", "")
+
+    text = re.sub(r"[^0-9.-]", "", text)
+    if not text or text in {"-", ".", "-."}:
+        return None
+
+    try:
+        return Decimal(text)
+    except Exception:
+        return None
+
+
+def normalize_receipt_currency(value):
+    raw = clean_text(value, 40).upper()
+    if not raw:
+        return None
+
+    normalized = (
+        raw.replace("Í", "I")
+        .replace("Ó", "O")
+        .replace("Á", "A")
+        .replace("É", "E")
+        .replace("Ú", "U")
+        .strip()
+    )
+
+    ves_aliases = {"VES", "BS", "BS.", "BSS", "BS.S", "BOLIVAR", "BOLIVARES"}
+    usd_aliases = {"USD", "US$", "$", "DOLAR", "DOLARES"}
+
+    if normalized in ves_aliases or "BOLIVAR" in normalized:
+        return "VES"
+    if normalized in usd_aliases or "DOLAR" in normalized:
+        return "USD"
+
+    return normalized[:8]
+
 def validate_payment_receipt(session, analysis):
     collection = session.get("collection", {})
     extracted = analysis.get("extracted") or {}
 
-    expected_amount = to_decimal_safe(collection.get("balance"))
-    detected_amount = extracted.get("amount")
-
-    amount_match = None
-    if detected_amount not in (None, ""):
-        try:
-            detected_decimal = to_decimal_safe(detected_amount)
-            amount_match = abs(detected_decimal - expected_amount) <= Decimal("0.01")
-        except Exception:
-            amount_match = False
-
-    expected_currency = clean_text(collection.get("currency"), 8).upper()
-    detected_currency = clean_text(extracted.get("currency"), 8).upper()
-
-    currency_match = None
-    if detected_currency:
-        aliases = {
-            "BS": "VES",
-            "BS.": "VES",
-            "BSS": "VES",
-            "BOLIVARES": "VES",
-            "$": "USD",
-            "US$": "USD",
-        }
-        detected_currency = aliases.get(detected_currency, detected_currency)
-        currency_match = detected_currency == expected_currency
-
-    recipient_name_match = text_matches(
-        PAYMENT_RECIPIENT_NAME,
-        extracted.get("recipient"),
-    )
-    bank_match = text_matches(
-        PAYMENT_RECIPIENT_BANK,
-        extracted.get("bank"),
-    )
-    phone_match = text_matches(
-        PAYMENT_RECIPIENT_PHONE,
-        extracted.get("phone"),
-    )
-    recipient_id_match = text_matches(
-        PAYMENT_RECIPIENT_ID,
-        extracted.get("reference"),
-    )
-
     is_receipt = bool(analysis.get("isPaymentReceipt"))
     confidence = float(analysis.get("confidence") or 0)
 
-    hard_mismatches = []
-    if not is_receipt:
-        hard_mismatches.append("not_payment_receipt")
-    if amount_match is False:
-        hard_mismatches.append("amount_mismatch")
-    if recipient_name_match is False:
-        hard_mismatches.append("recipient_mismatch")
-    if bank_match is False:
-        hard_mismatches.append("bank_mismatch")
-    if phone_match is False:
-        hard_mismatches.append("phone_mismatch")
-    if recipient_id_match is False:
-        hard_mismatches.append("recipient_id_mismatch")
+    expected_amount = normalize_amount(collection.get("balance"))
+    detected_amount = normalize_amount(extracted.get("amount"))
+    expected_currency = normalize_receipt_currency(collection.get("currency"))
+    detected_currency = normalize_receipt_currency(extracted.get("currency"))
 
-    if hard_mismatches:
+    amount_match = None
+    if expected_amount is not None and detected_amount is not None:
+        amount_match = abs(detected_amount - expected_amount) <= Decimal("0.01")
+
+    currency_match = None
+    if expected_currency and detected_currency:
+        currency_match = detected_currency == expected_currency
+
+    if not is_receipt:
+        result = "INVALID_RECEIPT"
+    elif amount_match is False:
         result = "MISMATCH"
-    elif amount_match is None:
+    elif currency_match is False:
+        result = "MISMATCH"
+    elif detected_amount is None:
+        result = "REVIEW"
+    elif expected_amount is None:
         result = "REVIEW"
     elif confidence < RECEIPT_CONFIDENCE_THRESHOLD:
         result = "REVIEW"
@@ -1099,18 +1513,23 @@ def validate_payment_receipt(session, analysis):
             "isPaymentReceipt": is_receipt,
             "amountMatches": amount_match,
             "currencyMatches": currency_match,
-            "recipientMatches": recipient_name_match,
-            "bankMatches": bank_match,
-            "phoneMatches": phone_match,
-            "recipientIdMatches": recipient_id_match,
         },
         "expected": {
-            "amount": deep_decimal_to_native(expected_amount),
+            "amount": deep_decimal_to_native(expected_amount) if expected_amount is not None else None,
             "currency": expected_currency,
         },
-        "extracted": extracted,
+        "extracted": {
+            "amount": deep_decimal_to_native(detected_amount) if detected_amount is not None else extracted.get("amount"),
+            "currency": detected_currency or extracted.get("currency"),
+            "date": extracted.get("date"),
+            "operationNumber": extracted.get("operationNumber"),
+            "payer": extracted.get("payer"),
+            "recipient": extracted.get("recipient"),
+            "bank": extracted.get("bank"),
+            "phone": extracted.get("phone"),
+            "reference": extracted.get("reference"),
+        },
         "reason": clean_text(analysis.get("reason"), 500),
-        "mismatches": hard_mismatches,
         "validatedAt": now_iso(),
     }
 
@@ -1205,13 +1624,10 @@ def confirm_media_upload(code, data):
                 reply = make_message(
                     "assistant",
                     (
-                        "Recibimos el comprobante. Los datos visibles coinciden "
-                        "con el monto esperado. Queda registrado para validacion."
+                        "Recibimos tu comprobante. El monto y la moneda visibles "
+                        "coinciden con esta gestion. Queda registrado para validacion."
                     ),
-                    metadata={
-                        "event": "RECEIPT_MATCHED",
-                        "validation": "MATCH",
-                    },
+                    metadata={"event": "RECEIPT_MATCHED", "validation": "MATCH"},
                 )
                 session["messages"].append(reply)
 
@@ -1219,50 +1635,45 @@ def confirm_media_upload(code, data):
                 session["FLOW_STEP"] = "PAYMENT_MISMATCH"
                 detected = receipt_validation.get("extracted", {}).get("amount")
                 expected = receipt_validation.get("expected", {}).get("amount")
-
-                if detected not in (None, ""):
-                    text = (
-                        f"El comprobante no coincide con el pago esperado. "
-                        f"El monto detectado fue {detected} y el esperado es {expected}. "
-                        "Puedes adjuntar otro comprobante o hablar con un asesor."
-                    )
-                else:
-                    text = (
-                        "No pudimos validar este archivo como un comprobante "
-                        "compatible con el pago esperado. Puedes adjuntar otro "
-                        "comprobante o hablar con un asesor."
-                    )
-
-                session["messages"].append(
-                    make_message(
-                        "assistant",
-                        text,
-                        metadata={
-                            "event": "RECEIPT_MISMATCH",
-                            "validation": "MISMATCH",
-                        },
-                    )
+                text = (
+                    "El comprobante recibido no coincide con la informacion de esta gestion. "
+                    f"El monto detectado fue {detected} y el monto esperado es {expected}. "
+                    "Puedes adjuntar otro comprobante o hablar con un asesor."
+                    if detected not in (None, "") and expected not in (None, "")
+                    else
+                    "El comprobante recibido no coincide con la informacion de esta gestion. "
+                    "Puedes adjuntar otro comprobante o hablar con un asesor."
                 )
+                session["messages"].append(make_message(
+                    "assistant", text,
+                    metadata={"event": "RECEIPT_MISMATCH", "validation": "MISMATCH"},
+                ))
+
+            elif result == "INVALID_RECEIPT":
+                session["FLOW_STEP"] = "PAYMENT_MISMATCH"
+                session["messages"].append(make_message(
+                    "assistant",
+                    (
+                        "El archivo recibido no parece corresponder a un comprobante de pago. "
+                        "Puedes intentar con otra imagen o hablar con un asesor."
+                    ),
+                    metadata={"event": "INVALID_RECEIPT", "validation": "INVALID_RECEIPT"},
+                ))
 
             else:
                 session["FLOW_STEP"] = "PAYMENT_REVIEW"
                 session["MODE"] = "WAITING_AGENT"
                 session["assignedOperatorId"] = ""
                 session["assignedOperatorName"] = ""
+                session["messages"].append(make_message(
+                    "system",
+                    (
+                        "Recibimos tu comprobante, pero no pudimos validarlo automaticamente. "
+                        "Estamos buscando un asesor disponible para revisarlo contigo."
+                    ),
+                    metadata={"event": "RECEIPT_REVIEW", "validation": "REVIEW"},
+                ))
 
-                session["messages"].append(
-                    make_message(
-                        "system",
-                        (
-                            "Recibimos el comprobante, pero necesita revision. "
-                            "Estamos buscando un asesor disponible."
-                        ),
-                        metadata={
-                            "event": "RECEIPT_REVIEW",
-                            "validation": "REVIEW",
-                        },
-                    )
-                )
 
         except Exception:
             logger.exception("Fallo validando comprobante session=%s", code)
@@ -1717,10 +2128,13 @@ def route_http(event):
         return response(200, {
             "ok": True,
             "service": "dana-webchat-api",
+            "version": "1.6.1",
             "sessionTable": SESSION_TABLE_NAME,
             "operatorTable": OPERATOR_TABLE_NAME,
             "bedrockModel": BEDROCK_MODEL_ID,
             "mediaBucket": MEDIA_BUCKET,
+            "chimeControlRegion": AWS_REGION,
+            "chimeMediaRegion": CHIME_MEDIA_REGION,
         })
 
     # --------------------------------------------------------
@@ -1794,6 +2208,49 @@ def route_http(event):
         and parts[2] == "actions"
     ):
         status, result = process_customer_action(parts[1], body)
+        return response(status, result)
+
+    # LLAMADAS WEBRTC - AMAZON CHIME SDK
+    if (
+        method == "POST"
+        and len(parts) == 4
+        and parts[0] == "sessions"
+        and parts[2] == "call"
+        and parts[3] in {"start", "accept", "join", "reject", "end"}
+    ):
+        call_action = parts[3]
+        sender = clean_text(body.get("sender") or "user", 20).lower()
+
+        if sender == "operator":
+            if not require_operator_key(event):
+                return response(401, {
+                    "success": False,
+                    "error": "unauthorized",
+                })
+
+        try:
+            if call_action == "start":
+                status, result = start_call(parts[1], body)
+            elif call_action == "accept":
+                status, result = accept_call(parts[1], body)
+            elif call_action == "join":
+                status, result = join_call(parts[1], body)
+            elif call_action == "reject":
+                status, result = reject_call(parts[1], body)
+            else:
+                status, result = end_call(parts[1], body)
+        except Exception as exc:
+            logger.exception(
+                "Fallo llamada Chime action=%s session=%s",
+                call_action,
+                parts[1],
+            )
+            return response(500, {
+                "success": False,
+                "error": "call_operation_failed",
+                "detail": str(exc),
+            })
+
         return response(status, result)
 
     # MEDIA

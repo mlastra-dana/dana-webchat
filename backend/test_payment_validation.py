@@ -1,164 +1,329 @@
-"""Validate payment decision rules without AWS credentials."""
+"""Contract tests for the local Lambda v1.6.1, without AWS calls."""
 
 import ast
-import math
+import copy
 import re
 import unittest
-from datetime import datetime, timezone
+import uuid
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
 
-SOURCE = Path(__file__).with_name("lambda_function.py")
-NEEDED = {"clean_text", "to_decimal_safe", "deep_decimal_to_native", "text_matches", "identifier_matches", "validate_payment_receipt", "confirm_media_upload"}
-tree = ast.parse(SOURCE.read_text())
-functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in NEEDED]
-namespace = {
-    "Decimal": Decimal,
-    "math": math,
-    "re": re,
-    "now_iso": lambda: datetime.now(timezone.utc).isoformat(),
-    "RECEIPT_CONFIDENCE_THRESHOLD": 0.8,
-}
-exec(compile(ast.Module(body=functions, type_ignores=[]), str(SOURCE), "exec"), namespace)
+SOURCE = Path(__file__).with_name('lambda_function.py')
+TREE = ast.parse(SOURCE.read_text(encoding='utf-8'))
+FUNCTIONS = {node.name: node for node in TREE.body if isinstance(node, ast.FunctionDef)}
+
+
+def load_functions(*names, **dependencies):
+    nodes = [FUNCTIONS[name] for name in names]
+    context = {'Decimal': Decimal, 're': re, 'uuid': uuid, **dependencies}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(SOURCE), 'exec'), context)
+    return context
+
+
+COMMON = ('clean_text', 'deep_decimal_to_native', 'deep_native_to_decimal',
+          'normalize_amount', 'normalize_receipt_currency', 'validate_payment_receipt')
+
+
+def payment_context(**dependencies):
+    return load_functions(*COMMON, RECEIPT_CONFIDENCE_THRESHOLD=0.85,
+                          now_iso=lambda: '2026-11-26T00:00:00Z', **dependencies)
 
 
 class PaymentValidationTests(unittest.TestCase):
     def setUp(self):
-        self.session = {
-            "collection": {"balance": Decimal("200.00"), "currency": "USD"},
-            "paymentVerification": {"operationNumber": "OP-12345"},
-        }
+        self.context = payment_context()
+        self.session = {'collection': {
+            'balance': Decimal('64024.00'), 'currency': 'VES',
+            'reference': 'DEUDA-123', 'dueDate': '2026-12-01',
+        }, 'customer': {'firstName': 'Cliente'}}
 
-    def result(self, **extracted):
-        analysis = {
-            "isPaymentReceipt": True,
-            "confidence": 0.95,
-            "extracted": {"amount": 200, "currency": "USD", "operationNumber": "OP-12345", **extracted},
-        }
-        return namespace["validate_payment_receipt"](self.session, analysis)
+    def result(self, *, amount=Decimal('64024.00'), currency='VES',
+               is_receipt=True, confidence=0.95, **details):
+        analysis = {'isPaymentReceipt': is_receipt, 'confidence': confidence,
+                    'extracted': {'amount': amount, 'currency': currency, **details}}
+        return self.context['validate_payment_receipt'](self.session, analysis)
 
     def test_matching_amount_and_currency(self):
-        self.assertEqual(self.result()["result"], "MATCH")
+        result = self.result()
+        self.assertEqual(result['result'], 'MATCH')
+        self.assertEqual(result['checks']['amountMatches'], True)
+        self.assertEqual(result['checks']['currencyMatches'], True)
+
+    def test_localized_amount_and_bolivar_alias_match(self):
+        result = self.result(amount='64.024,00', currency='Bs.')
+        self.assertEqual(result['result'], 'MATCH')
+        self.assertEqual(result['extracted']['amount'], 64024)
+        self.assertEqual(result['extracted']['currency'], 'VES')
 
     def test_wrong_amount_is_mismatch(self):
-        self.assertEqual(self.result(amount=150)["result"], "MISMATCH")
+        self.assertEqual(self.result(amount=Decimal('50000.00'))['result'], 'MISMATCH')
 
     def test_wrong_currency_is_mismatch(self):
-        result = self.result(currency="VES")
-        self.assertEqual(result["result"], "MISMATCH")
-        self.assertIn("currency_mismatch", result["mismatches"])
+        self.assertEqual(self.result(currency='USD')['result'], 'MISMATCH')
 
-    def test_missing_currency_requires_review(self):
-        self.assertEqual(self.result(currency=None)["result"], "REVIEW")
+    def test_non_receipt_is_invalid(self):
+        self.assertEqual(self.result(is_receipt=False)['result'], 'INVALID_RECEIPT')
 
-    def test_receipt_without_recipient_name_can_match(self):
-        self.assertEqual(self.result(recipient=None)["result"], "MATCH")
+    def test_unreadable_amount_requires_review(self):
+        self.assertEqual(self.result(amount='no legible')['result'], 'REVIEW')
 
-    def test_missing_dana_transaction_identifier_requires_review(self):
-        self.session["paymentVerification"] = {}
-        self.assertEqual(self.result()["result"], "REVIEW")
+    def test_insufficient_amount_information_requires_review(self):
+        self.assertEqual(self.result(amount=None)['result'], 'REVIEW')
 
-    def test_missing_operation_number_requires_review(self):
-        self.assertEqual(self.result(operationNumber=None)["result"], "REVIEW")
+    def test_low_confidence_requires_review(self):
+        self.assertEqual(self.result(confidence=0.4)['result'], 'REVIEW')
 
-    def test_wrong_operation_number_is_mismatch(self):
-        self.assertEqual(self.result(operationNumber="OP-54321")["result"], "MISMATCH")
+    def test_threshold_is_inclusive(self):
+        self.assertEqual(self.result(confidence=0.85)['result'], 'MATCH')
 
-    def test_explicit_dana_reference_can_match(self):
-        self.session["paymentVerification"] = {"reference": "REF-987"}
-        self.assertEqual(self.result(operationNumber=None, reference="REF-987")["result"], "MATCH")
+    def test_different_bank_does_not_affect_match(self):
+        self.assertEqual(self.result(bank='Otro banco')['result'], 'MATCH')
 
-    def test_dana_recipient_phone_can_match_without_operation_number_or_name(self):
-        self.session["paymentVerification"] = {"phone": "0412-1234567", "bank": "Banco A"}
-        self.assertEqual(self.result(operationNumber=None, recipient=None, phone="04121234567", bank="Banco A")["result"], "MATCH")
+    def test_different_banking_reference_does_not_affect_match(self):
+        self.assertEqual(self.result(reference='REF-DISTINTA')['result'], 'MATCH')
 
-    def test_missing_dana_recipient_phone_requires_review(self):
-        self.session["paymentVerification"] = {"phone": "0412-1234567"}
-        self.assertEqual(self.result(operationNumber=None, phone=None)["result"], "REVIEW")
+    def test_different_recipient_does_not_affect_match(self):
+        self.assertEqual(self.result(recipient='Otra persona')['result'], 'MATCH')
 
-    def test_unreadable_amount_cannot_match(self):
-        self.assertEqual(self.result(amount="no legible")["result"], "MISMATCH")
-
-    def test_low_or_invalid_confidence_requires_review(self):
-        for confidence in (0.2, float("nan"), float("inf")):
-            analysis = {"isPaymentReceipt": True, "confidence": confidence, "extracted": {"amount": 200, "currency": "USD", "operationNumber": "OP-12345"}}
-            with self.subTest(confidence=confidence):
-                self.assertEqual(namespace["validate_payment_receipt"](self.session, analysis)["result"], "REVIEW")
+    def test_different_phone_and_account_do_not_affect_match(self):
+        self.assertEqual(self.result(phone='0000000', account='OTRA-CUENTA')['result'], 'MATCH')
 
 
-class ReceiptFlowTests(unittest.TestCase):
+class StrictDynamoTable:
+    """DynamoDB's relevant constraint: nested floats cannot be serialized."""
+
+    def __init__(self, item=None):
+        self.item = copy.deepcopy(item)
+        self.writes = []
+
+    def get_item(self, Key):
+        return {'Item': copy.deepcopy(self.item)} if self.item else {}
+
+    def put_item(self, Item):
+        def verify(value):
+            if isinstance(value, float):
+                raise TypeError('Float types are not supported. Use Decimal types instead.')
+            if isinstance(value, dict):
+                for child in value.values():
+                    verify(child)
+            elif isinstance(value, list):
+                for child in value:
+                    verify(child)
+        verify(Item)
+        self.item = copy.deepcopy(Item)
+        self.writes.append(copy.deepcopy(Item))
+
+
+def message(role, text, message_type='text', metadata=None):
+    return {'role': role, 'text': text, 'type': message_type,
+            'metadata': metadata or {}}
+
+
+class FakeS3:
+    def __init__(self):
+        self.head = {'ContentLength': 100, 'ContentType': 'image/png'}
+        self.presigns = []
+        self.deleted = []
+
+    def generate_presigned_url(self, operation, **kwargs):
+        self.presigns.append((operation, kwargs))
+        return f'https://example.invalid/{operation}'
+
+    def head_object(self, **kwargs):
+        return self.head
+
+    def delete_object(self, **kwargs):
+        self.deleted.append(kwargs)
+
+
+class MediaFlowTests(unittest.TestCase):
     def setUp(self):
         self.session = {
-            "CODE": "test-code",
-            "MODE": "BOT",
-            "FLOW_STEP": "WAITING_PAYMENT_PROOF",
-            "collection": {"status": "PENDING"},
-            "messages": [],
+            'CODE': 'test-code', 'MODE': 'BOT', 'FLOW_STEP': 'WAITING_PAYMENT_PROOF',
+            'collection': {'balance': Decimal('64024.00'), 'currency': 'VES', 'status': 'PENDING'},
+            'messages': [],
         }
-        self.saved = []
-        self.head_calls = 0
-
-        def head_object(**_kwargs):
-            self.head_calls += 1
-            return {"ContentLength": 100, "ContentType": "image/png"}
-
-        self.context = dict(namespace)
-        self.context.update({
-            "get_session": lambda _code: self.session,
-            "validate_media_request": lambda _data: ("receipt.png", "image/png", 100, "image"),
-            "authorize_media_sender": lambda _session, _data: ("user", ""),
-            "s3": SimpleNamespace(head_object=head_object, delete_object=lambda **_kwargs: None),
-            "MEDIA_BUCKET": "test-bucket",
-            "MEDIA_PREFIX": "receipts",
-            "MEDIA_MAX_BYTES": 1000,
-            "RECEIPT_MAX_BYTES": 1000,
-            "make_message": lambda role, text, message_type="text", metadata=None: {"role": role, "text": text, "type": message_type, "metadata": metadata or {}},
-            "save_session": lambda session: self.saved.append(session["FLOW_STEP"]),
-            "session_public_view": lambda session: dict(session),
-            "public_message_view": lambda message: dict(message),
-            "logger": SimpleNamespace(exception=lambda *_args: None),
-            "analyze_payment_receipt": lambda *_args: {},
-            "validate_payment_receipt": lambda *_args: {"result": "MATCH", "extracted": {}, "expected": {}},
-        })
-        confirm_node = next(node for node in functions if node.name == "confirm_media_upload")
-        exec(compile(ast.Module(body=[confirm_node], type_ignores=[]), str(SOURCE), "exec"), self.context)
+        self.table = StrictDynamoTable()
+        self.s3 = FakeS3()
+        self.analysis = {'isPaymentReceipt': True, 'confidence': 0.94,
+                         'extracted': {'amount': '64.024,00', 'currency': 'Bs.'}}
+        names = (*COMMON, 'save_session', 'safe_filename', 'media_key_for',
+                 'validate_media_request', 'authorize_media_sender',
+                 'create_media_upload', 'confirm_media_upload')
+        self.context = load_functions(
+            *names, RECEIPT_CONFIDENCE_THRESHOLD=0.85,
+            get_session=lambda _code: self.session, session_table=self.table,
+            trim_messages=lambda items: items, now_iso=lambda: '2026-11-26T00:00:00Z',
+            MEDIA_PREFIX='receipts', MEDIA_BUCKET='test-bucket', MEDIA_MAX_BYTES=1000,
+            ALLOWED_MEDIA_TYPES={'image/png': 'image'}, s3=self.s3,
+            make_message=message, session_public_view=lambda session: copy.deepcopy(session),
+            public_message_view=lambda item: copy.deepcopy(item),
+            analyze_payment_receipt=lambda *_args: self.analysis,
+            logger=SimpleNamespace(exception=lambda *_args: None),
+        )
+        self.data = {'fileName': 'receipt.png', 'contentType': 'image/png',
+                     'size': 100, 'sender': 'user'}
 
     def confirm(self):
-        return self.context["confirm_media_upload"]("test-code", {"mediaKey": "receipts/test-code/receipt.png"})
+        return self.context['confirm_media_upload']('test-code',
+            {**self.data, 'mediaKey': 'receipts/test-code/receipt.png'})
 
-    def test_match_marks_receipt_as_matched(self):
-        status, _ = self.confirm()
+    def test_presign_returns_s3_upload_url(self):
+        status, body = self.context['create_media_upload']('test-code', self.data)
         self.assertEqual(status, 200)
-        self.assertEqual(self.session["FLOW_STEP"], "PAYMENT_MATCHED")
-        self.assertEqual(self.session["collection"]["status"], "RECEIPT_MATCHED")
+        self.assertEqual(body['uploadHeaders']['Content-Type'], 'image/png')
+        self.assertTrue(body['mediaKey'].startswith('receipts/test-code/'))
+        self.assertEqual(self.s3.presigns[0][0], 'put_object')
 
-    def test_mismatch_allows_another_receipt(self):
-        self.context["validate_payment_receipt"] = lambda *_args: {"result": "MISMATCH", "extracted": {}, "expected": {}}
-        self.confirm()
-        self.assertEqual(self.session["FLOW_STEP"], "PAYMENT_MISMATCH")
-        self.assertEqual(self.session["MODE"], "BOT")
-
-    def test_review_enters_operator_queue(self):
-        self.context["validate_payment_receipt"] = lambda *_args: {"result": "REVIEW", "extracted": {}, "expected": {}}
-        self.confirm()
-        self.assertEqual(self.session["FLOW_STEP"], "PAYMENT_REVIEW")
-        self.assertEqual(self.session["MODE"], "WAITING_AGENT")
-
-    def test_repeated_confirmation_does_not_analyze_again(self):
-        self.confirm()
-        status, _ = self.confirm()
+    def test_confirm_match_saves_float_confidence_as_decimal(self):
+        status, body = self.confirm()
         self.assertEqual(status, 200)
-        self.assertEqual(self.head_calls, 1)
-        self.assertEqual(len([message for message in self.session["messages"] if message["type"] == "image"]), 1)
+        self.assertEqual(body['receiptValidation']['result'], 'MATCH')
+        self.assertEqual(self.session['FLOW_STEP'], 'PAYMENT_MATCHED')
+        self.assertEqual(self.table.item['paymentValidation']['confidence'], Decimal('0.94'))
+        self.assertIsInstance(self.table.item['paymentValidation']['confidence'], Decimal)
+        self.assertEqual(self.session['paymentValidation']['confidence'], 0.94)
+        self.assertEqual(self.session['collection']['status'], 'RECEIPT_MATCHED')
+        self.assertEqual(self.session['messages'][0]['type'], 'image')
 
-    def test_wrong_uploaded_size_is_rejected(self):
-        self.context["validate_media_request"] = lambda _data: ("receipt.png", "image/png", 99, "image")
+    def test_confirm_mismatch_allows_another_receipt(self):
+        self.analysis['extracted']['amount'] = 50000
+        status, body = self.confirm()
+        self.assertEqual(status, 200)
+        self.assertEqual(body['receiptValidation']['result'], 'MISMATCH')
+        self.assertEqual(self.session['FLOW_STEP'], 'PAYMENT_MISMATCH')
+        self.assertEqual(self.session['MODE'], 'BOT')
+
+    def test_confirm_review_enters_operator_queue(self):
+        self.analysis['extracted']['amount'] = None
+        status, body = self.confirm()
+        self.assertEqual(status, 200)
+        self.assertEqual(body['session']['paymentValidation']['result'], 'REVIEW')
+        self.assertEqual(self.session['MODE'], 'WAITING_AGENT')
+        self.assertEqual(self.session['FLOW_STEP'], 'PAYMENT_REVIEW')
+
+    def test_confirm_invalid_receipt_allows_retry_without_queue(self):
+        self.analysis['isPaymentReceipt'] = False
+        status, body = self.confirm()
+        self.assertEqual(status, 200)
+        self.assertEqual(body['receiptValidation']['result'], 'INVALID_RECEIPT')
+        self.assertEqual(self.session['MODE'], 'BOT')
+        self.assertEqual(self.session['FLOW_STEP'], 'PAYMENT_MISMATCH')
+
+    def test_confirm_analysis_error_goes_to_review(self):
+        self.context['analyze_payment_receipt'] = lambda *_args: (_ for _ in ()).throw(RuntimeError('AI unavailable'))
+        status, body = self.confirm()
+        self.assertEqual(status, 200)
+        self.assertIsNone(body['receiptValidation'])
+        self.assertEqual(body['session']['paymentValidation']['result'], 'REVIEW')
+        self.assertEqual(self.session['MODE'], 'WAITING_AGENT')
+
+    def test_confirm_rejects_oversized_uploaded_object(self):
+        self.s3.head['ContentLength'] = 1001
         status, body = self.confirm()
         self.assertEqual(status, 400)
-        self.assertEqual(body["error"], "invalid_uploaded_size")
+        self.assertEqual(body['error'], 'invalid_uploaded_size')
+        self.assertEqual(len(self.s3.deleted), 1)
+
+    def test_confirm_rejects_content_type_mismatch(self):
+        self.s3.head['ContentType'] = 'image/jpeg'
+        status, body = self.confirm()
+        self.assertEqual(status, 400)
+        self.assertEqual(body['error'], 'content_type_mismatch')
 
 
-if __name__ == "__main__":
+class FakeChime:
+    def __init__(self):
+        self.meeting = {'MeetingId': 'meeting-1', 'ExternalMeetingId': 'linkchat-test-code',
+                        'MediaRegion': 'us-east-1'}
+        self.deleted = []
+        self.attendees = 0
+
+    def create_meeting(self, **kwargs):
+        return {'Meeting': self.meeting}
+
+    def get_meeting(self, **kwargs):
+        return {'Meeting': self.meeting}
+
+    def create_attendee(self, **kwargs):
+        self.attendees += 1
+        return {'Attendee': {'JoinToken': f'token-{self.attendees}'}}
+
+    def delete_meeting(self, **kwargs):
+        self.deleted.append(kwargs['MeetingId'])
+
+
+class OperatorAndChimeTests(unittest.TestCase):
+    def setUp(self):
+        self.session = {
+            'CODE': 'test-code', 'MODE': 'WAITING_AGENT', 'FLOW_STEP': 'PAYMENT_REVIEW',
+            'STATUS': 'ACTIVE', 'collection': {}, 'messages': [], 'customer': {'firstName': 'Ana'},
+            'paymentValidation': {'result': 'REVIEW', 'confidence': 0.4},
+        }
+        self.operator_table = StrictDynamoTable({
+            'OPERATOR_ID': 'op-1', 'NAME': 'Asesor', 'EMAIL': 'asesor@example.invalid',
+            'ACTIVE': True, 'AVAILABLE': True, 'CURRENT_SESSION_CODE': '',
+        })
+        self.session_table = StrictDynamoTable()
+        self.chime = FakeChime()
+        names = ('clean_text', 'parse_bool', 'deep_decimal_to_native',
+                 'deep_native_to_decimal', 'call_public_view', 'chime_join_payload',
+                 'get_active_meeting', 'validate_call_actor', 'create_chime_attendee',
+                 'start_call', 'accept_call', 'join_call', 'end_call', 'save_session',
+                 'operator_public_view', 'take_session', 'operator_send_message',
+                 'release_session_to_bot')
+        self.context = load_functions(
+            *names, get_session=lambda _code: self.session,
+            operator_table=self.operator_table, session_table=self.session_table,
+            chime_meetings=self.chime, CHIME_MEDIA_REGION='us-east-1',
+            now_iso=lambda: '2026-11-26T00:00:00Z', trim_messages=lambda items: items,
+            make_message=message, session_public_view=lambda session: copy.deepcopy(session),
+            MAX_MESSAGE_LENGTH=1000, logger=SimpleNamespace(exception=lambda *_args: None),
+        )
+
+    def take(self):
+        return self.context['take_session']('test-code', {'operatorId': 'op-1'})
+
+    def test_operator_take_reply_and_return_to_bot(self):
+        status, body = self.take()
+        self.assertEqual(status, 200)
+        self.assertEqual(body['session']['MODE'], 'AGENT')
+        self.assertEqual(self.operator_table.item['CURRENT_SESSION_CODE'], 'test-code')
+        status, body = self.context['operator_send_message']('test-code',
+            {'operatorId': 'op-1', 'message': 'Hola'})
+        self.assertEqual(status, 200)
+        self.assertEqual(body['message']['text'], 'Hola')
+        status, body = self.context['release_session_to_bot']('test-code',
+            {'operatorId': 'op-1'})
+        self.assertEqual(status, 200)
+        self.assertEqual(body['session']['MODE'], 'BOT')
+        self.assertEqual(self.operator_table.item['CURRENT_SESSION_CODE'], '')
+        self.assertEqual(self.operator_table.item['AVAILABLE'], True)
+
+    def test_chime_start_accept_join_end(self):
+        self.assertEqual(self.take()[0], 200)
+        status, started = self.context['start_call']('test-code',
+            {'sender': 'operator', 'operatorId': 'op-1'})
+        self.assertEqual(status, 200)
+        self.assertEqual(started['call']['status'], 'RINGING')
+        self.assertTrue(started['joinInfo']['attendee']['JoinToken'])
+        status, accepted = self.context['accept_call']('test-code', {'sender': 'user'})
+        self.assertEqual(status, 200)
+        self.assertEqual(accepted['call']['status'], 'IN_CALL')
+        self.assertTrue(accepted['joinInfo']['attendee']['JoinToken'])
+        status, joined = self.context['join_call']('test-code',
+            {'sender': 'operator', 'operatorId': 'op-1'})
+        self.assertEqual(status, 200)
+        self.assertEqual(joined['call']['status'], 'IN_CALL')
+        self.assertEqual(self.chime.attendees, 3)
+        status, ended = self.context['end_call']('test-code', {'sender': 'user'})
+        self.assertEqual(status, 200)
+        self.assertEqual(ended['call']['status'], 'ENDED')
+        self.assertEqual(self.chime.deleted, ['meeting-1'])
+        self.assertEqual(self.session_table.item['paymentValidation']['confidence'], Decimal('0.4'))
+
+
+if __name__ == '__main__':
     unittest.main()

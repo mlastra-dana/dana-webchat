@@ -7,6 +7,8 @@ import PoweredByDana from '../components/PoweredByDana'
 import QuickActions from '../components/QuickActions'
 import SystemMessage from '../components/SystemMessage'
 import PaymentProofUploader from '../components/PaymentProofUploader'
+import PaymentValidationNotice from '../components/PaymentValidationNotice'
+import AudioCall from '../components/AudioCall'
 import { getSession, readSession, sendAction, sendMessage, uploadPaymentProof } from '../services/api'
 
 const actions = { pay: 'PAY_NOW', detail: 'VIEW_DETAIL', advisor: 'TALK_TO_AGENT', back: 'BACK_HOME' }
@@ -161,12 +163,14 @@ export default function ChatPage({ sessionToken }) {
   return <main className="app-shell">
     <div className="chat-window">
       <ChatHeader companyName={session.brand?.companyName} subtitle={session.brand?.subtitle} mode={session.mode} operatorName={session.assignedOperatorName} customerName={session.customer?.firstName} />
+      <AudioCall code={sessionToken} session={session} sender="user" onSession={setSession} />
       <div className="conversation-scroll" ref={scrollRef} onScroll={trackScroll}>
         <div className="conversation-content" aria-live="polite" aria-relevant="additions">
           {session.messages.slice(0, summaryIndex).map(renderMessage)}
           {session.collection && showSummary && <DebtCard collection={session.collection} />}
           {session.mode === 'BOT' && visibleActions.length > 0 && <QuickActions items={visibleActions} onAction={handleAction} disabled={sending} />}
           {session.messages.slice(summaryIndex).map((item, index) => renderMessage(item, summaryIndex + index))}
+          <PaymentValidationNotice validation={['PAYMENT_MATCHED', 'PAYMENT_MISMATCH', 'PAYMENT_REVIEW'].includes(session.flowStep) ? session.paymentValidation : null} waitingForAgent={session.mode === 'WAITING_AGENT'} />
           {allowProof && <PaymentProofUploader onUpload={handleProofUpload} disabled={sending} />}
           {paymentUrl && <div className="cta-row"><a className="payment-cta" href={paymentUrl} target="_blank" rel="noopener noreferrer">Continuar al pago</a></div>}
           {error && <div className="error-note" role="alert">{error}</div>}

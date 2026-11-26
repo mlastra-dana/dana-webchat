@@ -84,6 +84,10 @@ export async function createOperator(name, email) {
   return request('/operators', { method: 'POST', body: JSON.stringify({ name, email }) })
 }
 
+export async function updateOperator(id, name, email) {
+  return request('/operators', { method: 'POST', body: JSON.stringify({ operatorId: id, name, email }) })
+}
+
 export async function updateOperatorStatus(id, available) {
   return request(`/operators/${encodeURIComponent(id)}/status`, { method: 'POST', body: JSON.stringify({ available }) })
 }
@@ -102,4 +106,12 @@ export async function sendOperatorMessage(code, operatorId, message) {
 
 export async function returnToBot(code, operatorId) {
   return request(`${sessionPath(code)}/return-to-bot`, { method: 'POST', body: JSON.stringify({ operatorId }) })
+}
+
+export async function callAction(code, action, sender, operatorId = '') {
+  if (!['start', 'accept', 'join', 'reject', 'end'].includes(action)) throw new Error('Acción de llamada inválida.')
+  return request(`${sessionPath(code)}/call/${action}`, {
+    method: 'POST',
+    body: JSON.stringify({ sender, ...(sender === 'operator' ? { operatorId } : {}) }),
+  })
 }
