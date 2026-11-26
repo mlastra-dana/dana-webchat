@@ -278,3 +278,38 @@ button:disabled { cursor: not-allowed; }
 @media (max-width: 640px) { .operator-sidebar-top, .operator-chat-header { min-height: 60px; padding-top: max(7px, env(safe-area-inset-top)); } .operator-chat-header { padding-right: 9px; padding-left: 8px; gap: 2px; } .operator-return-button { padding: 6px; font-size: 0; } .operator-return-button svg { width: 18px; height: 18px; } .operator-messages { padding: 14px 11px; } .operator-message-bubble { max-width: 85%; } .operator-chat-footer .composer { padding: 8px 10px max(10px, env(safe-area-inset-bottom)); } .operator-chat-footer .attachment-menu { left: 0; } .operator-entry-card { padding: 24px 20px; } }
 .operator-availability { position: relative; }
 .operator-availability input { top: 50%; left: 0; z-index: 1; width: 31px; height: 18px; margin: 0; transform: translateY(-50%); cursor: pointer; }
+.operator-tabs { display: flex; flex-direction: column; gap: 3px; padding: 10px; }
+.operator-tabs button { justify-content: flex-start; width: 100%; min-height: 40px; padding: 0 11px; border: 0; border-radius: 9px; text-align: left; }
+.operator-tabs button.active { background: #f3edff; }
+.operator-tabs button span { margin-left: auto; }
+.operator-context-close { display: none; }
+.operator-settings { flex: 1; min-width: 0; height: 100%; overflow-y: auto; padding: 32px clamp(20px, 4vw, 56px); }
+.operator-settings-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; max-width: 1100px; margin: 0 auto 25px; }
+.operator-settings-header span { color: #6D28E0; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.operator-settings-header h1 { margin: 5px 0 7px; color: #121126; font-size: 26px; letter-spacing: -.03em; }
+.operator-settings-header p { margin: 0; color: #706b81; font-size: 13px; }
+.operator-settings-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.operator-settings-actions button, .operator-settings-form-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 8px 12px; border: 1px solid #ded8e9; border-radius: 9px; background: white; color: #4B16B6; font-size: 12px; font-weight: 750; }
+.operator-settings-actions .operator-settings-add, .operator-settings-form-actions button[type="submit"] { border-color: #4B16B6; background: #4B16B6; color: white; }
+.operator-settings-form, .operator-settings-card, .operator-settings-empty { max-width: 1100px; margin: 0 auto 12px; padding: 18px; border: 1px solid #e8e2f0; border-radius: 12px; background: white; }
+.operator-settings-form h2 { margin: 0 0 15px; font-size: 16px; }
+.operator-settings-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.operator-settings-fields label { color: #544a65; font-size: 12px; font-weight: 700; }
+.operator-settings-fields input { display: block; width: 100%; height: 40px; margin-top: 6px; padding: 0 10px; border: 1px solid #ded8e9; border-radius: 8px; color: #121126; }
+.operator-settings-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.operator-settings-list { max-width: 1100px; margin: 0 auto; }
+.operator-settings-card { display: flex; align-items: center; gap: 18px; }
+.operator-settings-person { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 5px; }
+.operator-settings-person strong { font-size: 14px; }
+.operator-settings-person span { overflow: hidden; color: #706b81; font-size: 12px; text-overflow: ellipsis; }
+.operator-settings-facts { display: flex; gap: 22px; }
+.operator-settings-facts > div { display: flex; flex-direction: column; gap: 4px; min-width: 75px; }
+.operator-settings-facts span { color: #817b8e; font-size: 10px; }
+.operator-settings-facts strong { font-size: 12px; overflow-wrap: anywhere; }
+.operator-settings-notice { max-width: 1100px; margin: 0 auto 12px; padding: 10px 12px; border-radius: 9px; background: #f3edff; color: #4B16B6; font-size: 12px; }
+.operator-settings > .operator-sidebar-error { max-width: 1100px; margin: 0 auto 12px; }
+.operator-settings-empty { color: #817b8e; font-size: 13px; text-align: center; }
+.operator-settings-back { display: none; align-items: center; gap: 6px; margin-bottom: 14px; padding: 0; border: 0; background: transparent; color: #4B16B6; font-size: 12px; font-weight: 750; }
+@media (max-width: 1050px) { .operator-context { display: none; } .operator-context-open .operator-context { display: block; } .operator-context-close { display: inline; } }
+@media (max-width: 900px) { .operator-shell-settings-open .operator-sidebar { display: none; } .operator-shell-settings-open .operator-settings { width: 100%; } .operator-settings-back { display: flex; } .operator-settings-header > div > span { display: block; } }
+@media (max-width: 640px) { .operator-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; } .operator-tabs button { flex-direction: column; justify-content: center; gap: 3px; padding: 5px 3px; font-size: 10px; text-align: center; } .operator-tabs button span { margin: 0; } .operator-settings { padding: 20px 14px; } .operator-settings-header { flex-direction: column; gap: 16px; } .operator-settings-header h1 { font-size: 22px; } .operator-settings-card { align-items: flex-start; flex-wrap: wrap; gap: 12px; } .operator-settings-person { flex-basis: calc(100% - 80px); } .operator-settings-facts { order: 3; flex: 1 0 100%; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid #eeeaf3; } .operator-settings-fields { grid-template-columns: 1fr; } }

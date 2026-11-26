@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import OperatorSidebar from '../components/operator/OperatorSidebar'
 import OperatorChat from '../components/operator/OperatorChat'
+import OperatorSettings from '../components/operator/OperatorSettings'
 import { createOperator, getOperatorQueue, getOperators, getSession, readSession, returnToBot, takeSession, updateOperatorStatus } from '../services/api'
 import { clearOperatorIdentity, loadOperatorIdentity, normalizeOperator, saveOperatorIdentity } from '../services/operatorIdentity'
 
@@ -10,6 +11,8 @@ function codeFromPath() {
   catch { return '' }
 }
 
+function viewFromPath() { return window.location.pathname === '/operator/settings' ? 'settings' : 'waiting' }
+
 export default function OperatorPage() {
   const [operator, setOperator] = useState(loadOperatorIdentity)
   const [knownOperators, setKnownOperators] = useState([])
@@ -18,14 +21,14 @@ export default function OperatorPage() {
   const [activeCode, setActiveCode] = useState(codeFromPath)
   const [currentSession, setCurrentSession] = useState(null)
   const [queue, setQueue] = useState([])
-  const [tab, setTab] = useState('waiting')
+  const [tab, setTab] = useState(() => codeFromPath() ? 'assigned' : viewFromPath())
   const [error, setError] = useState('')
   const [syncError, setSyncError] = useState('')
   const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
-    const onPop = () => setActiveCode(codeFromPath())
+    const onPop = () => { const code = codeFromPath(); setActiveCode(code); setTab(code ? 'assigned' : viewFromPath()) }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
@@ -61,13 +64,24 @@ export default function OperatorPage() {
   }, [operator?.id, refresh])
 
   const handleSession = useCallback((session) => { setCurrentSession(session) }, [])
+  const handleOperatorChanged = useCallback((next) => { setOperator(next); saveOperatorIdentity(next) }, [])
 
-  function navigate(code = '') {
-    const path = code ? `/operator/chat/${encodeURIComponent(code)}` : '/operator'
+  useEffect(() => {
+    const code = operator?.currentSessionCode
+    if (!code || currentSession?.code === code) return
+    let active = true
+    getSession(code).then((session) => { if (active) setCurrentSession(session) }).catch(() => {})
+    return () => { active = false }
+  }, [operator?.currentSessionCode, currentSession?.code])
+
+  function navigate(code = '', nextTab = 'waiting') {
+    const path = code ? `/operator/chat/${encodeURIComponent(code)}` : nextTab === 'settings' ? '/operator/settings' : '/operator'
     window.history.pushState({}, '', path)
     setActiveCode(code)
-    if (!code) setCurrentSession(null)
+    setTab(nextTab)
   }
+
+  function selectTab(nextTab) { navigate('', nextTab) }
 
   async function enter(event) {
     event.preventDefault()
@@ -77,8 +91,11 @@ export default function OperatorPage() {
     setBusy(true)
     setError('')
     try {
-      const response = await createOperator(cleanName, cleanEmail)
-      let next = normalizeOperator(response.operator || response)
+      const existing = (await getOperators()).map(normalizeOperator)
+        .filter((item) => item?.email.toLowerCase() === cleanEmail && item?.name.trim().toLowerCase() === cleanName.toLowerCase())
+        .sort((a, b) => Number(b.active && b.available) - Number(a.active && a.available))[0]
+      const response = existing ? null : await createOperator(cleanName, cleanEmail)
+      let next = existing || normalizeOperator(response?.operator || response)
       if (!next) {
         const items = await getOperators()
         next = items.map(normalizeOperator).find((item) => item?.email.toLowerCase() === cleanEmail)
@@ -115,8 +132,7 @@ export default function OperatorPage() {
       const session = response?.session ? readSession(response) : await getSession(code)
       if (session.mode !== 'AGENT') throw new Error(`La sesión continúa en modo ${session.mode || 'desconocido'} después de tomarla.`)
       setCurrentSession(session)
-      navigate(code)
-      setTab('assigned')
+      navigate(code, 'assigned')
       await refresh()
     } catch (cause) { setError(cause.message) }
     finally { setBusy(false) }
@@ -131,7 +147,6 @@ export default function OperatorPage() {
       const session = response?.session ? readSession(response) : await getSession(code)
       if (session.mode !== 'BOT') throw new Error(`La sesión continúa en modo ${session.mode || 'desconocido'} después de devolverla al bot.`)
       navigate()
-      setTab('waiting')
       await refresh()
     } catch (cause) { setError(cause.message) }
     finally { setBusy(false) }
@@ -158,8 +173,8 @@ export default function OperatorPage() {
     <small>Acceso de PoC. La identidad del operador se guarda solo en esta sesión del navegador.</small>
   </form></main>
 
-  return <main className={`operator-shell ${activeCode ? 'operator-shell-chat-open' : ''}`}>
-    <OperatorSidebar operator={operator} queue={queue} activeCode={activeCode} currentSession={currentSession} tab={tab} onTab={setTab} onSelect={navigate} onTake={take} onStatus={changeStatus} onExit={exit} onRefresh={refresh} busy={busy} error={error || syncError} now={now} />
-    {activeCode ? <OperatorChat code={activeCode} operator={operator} onBack={() => navigate()} onTake={take} onReturn={release} onSession={handleSession} busy={busy} actionError={error} /> : <section className="operator-placeholder"><div className="operator-placeholder-mark">D</div><h1>Conversaciones DANA LinkChat</h1><p>Selecciona una conversación de la cola para comenzar a atenderla.</p></section>}
+  return <main className={`operator-shell ${activeCode ? 'operator-shell-chat-open' : ''} ${tab === 'settings' ? 'operator-shell-settings-open' : ''}`}>
+    <OperatorSidebar operator={operator} queue={queue} activeCode={activeCode} currentSession={currentSession} tab={tab} onTab={selectTab} onSelect={(code) => navigate(code, 'assigned')} onTake={take} onStatus={changeStatus} onExit={exit} onRefresh={refresh} busy={busy} error={error || syncError} now={now} />
+    {tab === 'settings' ? <OperatorSettings currentOperator={operator} onOperatorChanged={handleOperatorChanged} onBack={() => navigate()} /> : activeCode ? <OperatorChat code={activeCode} operator={operator} onBack={() => navigate('', tab)} onTake={take} onReturn={release} onSession={handleSession} busy={busy} actionError={error} /> : <section className="operator-placeholder"><div className="operator-placeholder-mark">D</div><h1>{tab === 'assigned' ? 'Mis conversaciones' : 'Cola de atención'}</h1><p>{tab === 'assigned' ? 'Selecciona tu conversación activa para continuar.' : 'Selecciona una conversación de la cola para comenzar a atenderla.'}</p></section>}
   </main>
 }

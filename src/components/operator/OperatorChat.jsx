@@ -87,7 +87,7 @@ export default function OperatorChat({ code, operator, onBack, onTake, onReturn,
       <button type="button" className="operator-icon-button" aria-label="Ver contexto del cliente" title="Ver contexto" onClick={() => setShowContext((open) => !open)} disabled={!session}><Info size={19} /></button>
       {assigned && <button type="button" className="operator-return-button" onClick={() => onReturn(code)} disabled={busy || sending}><RotateCcw size={16} /><span>Devolver al bot</span></button>}
     </header>
-    <div className="operator-chat-body">
+    <div className={`operator-chat-body ${showContext ? 'operator-context-open' : ''}`}>
       <div className="operator-message-scroll" ref={scrollRef} onScroll={trackScroll}>
         {loading && <div className="operator-chat-state">Cargando historial...</div>}
         {!loading && !session && <div className="operator-chat-state" role="alert">{error || 'No se pudo cargar la conversación.'}</div>}
@@ -102,11 +102,11 @@ export default function OperatorChat({ code, operator, onBack, onTake, onReturn,
           })}
         </div>}
       </div>
-      {session && showContext && <CustomerContext session={session} onClose={() => setShowContext(false)} />}
+      {session && <CustomerContext session={session} onClose={() => setShowContext(false)} />}
     </div>
     {session && <div className="operator-chat-footer">
       {(error || actionError) && <div className="operator-chat-error" role="alert">{error || actionError}</div>}
-      {session.mode === 'WAITING_AGENT' && <button type="button" className="operator-take-inline" onClick={() => onTake(code)} disabled={busy || !operator.available}>Tomar conversación</button>}
+      {session.mode === 'WAITING_AGENT' && <button type="button" className="operator-take-inline" onClick={() => onTake(code)} disabled={busy || !operator.active || !operator.available}>Tomar conversación</button>}
       {session.mode === 'BOT' && <div className="operator-chat-note">Esta conversación está siendo atendida por el bot.</div>}
       {session.mode === 'AGENT' && !assigned && <div className="operator-chat-note">Esta conversación está asignada a otro operador.</div>}
       {assigned && <ChatComposer onSend={handleSend} disabled={sending || busy} />}
