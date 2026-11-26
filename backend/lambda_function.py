@@ -877,7 +877,7 @@ def create_session(data):
     welcome_messages = [
         make_message(
             "assistant",
-            f"Hola {first_name}. Este es el detalle de tu saldo pendiente.",
+            f"Hola {first_name}. Aquí tienes tu saldo pendiente.",
         )
     ]
 
@@ -970,7 +970,7 @@ REGLAS OBLIGATORIAS:
 6. No digas que eres WhatsApp ni imites una marca externa.
 7. Responde normalmente en espanol.
 8. Mantente en el contexto de cobranza y no hagas afirmaciones que no esten respaldadas por la sesion.
-9. Respuestas cortas: normalmente 1 a 4 frases.
+9. Responde directamente en una o dos frases breves (maximo 30 palabras). No repitas el saldo, la fecha ni la referencia si ya aparecen en el resumen, salvo que el cliente los pregunte.
 10. Si la etapa es WAITING_PAYMENT_PROOF, indica que puede adjuntar el comprobante desde el chat.
 11. Nunca afirmes que un pago fue acreditado al banco solo porque un comprobante parece valido.
 """.strip()
@@ -1030,10 +1030,7 @@ def ask_bedrock(session, user_text):
     ).strip()
 
     if not text:
-        return (
-            "No pude responder en este momento. "
-            "Puedes consultar el detalle o solicitar hablar con un asesor."
-        )
+        return "No pude responder. Intenta de nuevo o habla con un asesor."
 
     return clean_text(text, MAX_MESSAGE_LENGTH)
 
@@ -1065,10 +1062,7 @@ def send_customer_message(code, data):
             answer = ask_bedrock(session, text)
         except Exception:
             logger.exception("Bedrock fallo para session=%s", code)
-            answer = (
-                "No pude responder automaticamente en este momento. "
-                "Puedes solicitar hablar con un asesor."
-            )
+            answer = "No pude responder. Intenta de nuevo o habla con un asesor."
 
         assistant_message = make_message("assistant", answer)
         session["messages"].append(assistant_message)
@@ -1128,10 +1122,7 @@ def process_customer_action(code, data):
         user_message = make_message("user", "Quiero pagar ahora")
         reply = make_message(
             "assistant",
-            (
-                "Perfecto. Cuando realices el pago, adjunta aqui el comprobante "
-                "para validar que los datos coincidan con esta gestion."
-            ),
+            "Cuando pagues, adjunta aquí el comprobante.",
             metadata={"action": "PAY_NOW"},
         )
 
@@ -1623,27 +1614,14 @@ def confirm_media_upload(code, data):
                 session["collection"]["status"] = "RECEIPT_MATCHED"
                 reply = make_message(
                     "assistant",
-                    (
-                        "Recibimos tu comprobante. El monto y la moneda visibles "
-                        "coinciden con esta gestion. Queda registrado para validacion."
-                    ),
+                    "Monto y moneda coinciden. Revisaremos el pago.",
                     metadata={"event": "RECEIPT_MATCHED", "validation": "MATCH"},
                 )
                 session["messages"].append(reply)
 
             elif result == "MISMATCH":
                 session["FLOW_STEP"] = "PAYMENT_MISMATCH"
-                detected = receipt_validation.get("extracted", {}).get("amount")
-                expected = receipt_validation.get("expected", {}).get("amount")
-                text = (
-                    "El comprobante recibido no coincide con la informacion de esta gestion. "
-                    f"El monto detectado fue {detected} y el monto esperado es {expected}. "
-                    "Puedes adjuntar otro comprobante o hablar con un asesor."
-                    if detected not in (None, "") and expected not in (None, "")
-                    else
-                    "El comprobante recibido no coincide con la informacion de esta gestion. "
-                    "Puedes adjuntar otro comprobante o hablar con un asesor."
-                )
+                text = "El monto o la moneda no coinciden. Adjunta otro comprobante o habla con un asesor."
                 session["messages"].append(make_message(
                     "assistant", text,
                     metadata={"event": "RECEIPT_MISMATCH", "validation": "MISMATCH"},
@@ -1653,10 +1631,7 @@ def confirm_media_upload(code, data):
                 session["FLOW_STEP"] = "PAYMENT_MISMATCH"
                 session["messages"].append(make_message(
                     "assistant",
-                    (
-                        "El archivo recibido no parece corresponder a un comprobante de pago. "
-                        "Puedes intentar con otra imagen o hablar con un asesor."
-                    ),
+                    "No parece un comprobante. Adjunta otro archivo o habla con un asesor.",
                     metadata={"event": "INVALID_RECEIPT", "validation": "INVALID_RECEIPT"},
                 ))
 
@@ -1667,10 +1642,7 @@ def confirm_media_upload(code, data):
                 session["assignedOperatorName"] = ""
                 session["messages"].append(make_message(
                     "system",
-                    (
-                        "Recibimos tu comprobante, pero no pudimos validarlo automaticamente. "
-                        "Estamos buscando un asesor disponible para revisarlo contigo."
-                    ),
+                    "Buscando un asesor para revisar tu comprobante.",
                     metadata={"event": "RECEIPT_REVIEW", "validation": "REVIEW"},
                 ))
 
@@ -1689,10 +1661,7 @@ def confirm_media_upload(code, data):
             session["messages"].append(
                 make_message(
                     "system",
-                    (
-                        "Recibimos el comprobante, pero no pudimos validarlo "
-                        "automaticamente. Estamos buscando un asesor disponible."
-                    ),
+                    "Buscando un asesor para revisar tu comprobante.",
                     metadata={
                         "event": "RECEIPT_REVIEW",
                         "validation": "REVIEW",

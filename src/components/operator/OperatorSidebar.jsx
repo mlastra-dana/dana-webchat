@@ -1,4 +1,5 @@
 import { Clock3, Headset, LogOut, RefreshCw, Settings2 } from 'lucide-react'
+import BrandMark from '../BrandMark'
 
 function formatMoney(value, currency) {
   if (value === undefined || value === null || !Number.isFinite(Number(value))) return `${currency || '—'} —`
@@ -28,7 +29,7 @@ export default function OperatorSidebar({ operator, queue, activeCode, currentSe
   })
   return <aside className={`operator-sidebar ${activeCode ? 'operator-sidebar-has-chat' : ''}`}>
     <div className="operator-sidebar-top">
-      <div className="operator-brand-mark">D</div>
+      <BrandMark className="operator-brand-mark" />
       <div className="operator-brand-copy"><strong>DANA LinkChat</strong><span>Panel de operadores</span></div>
       <button className="operator-icon-button" type="button" aria-label="Salir del panel" title="Salir del panel" onClick={onExit} disabled={busy}><LogOut size={17} /></button>
     </div>

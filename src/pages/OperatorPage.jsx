@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import OperatorSidebar from '../components/operator/OperatorSidebar'
 import OperatorChat from '../components/operator/OperatorChat'
 import OperatorSettings from '../components/operator/OperatorSettings'
+import BrandMark from '../components/BrandMark'
 import { createOperator, getOperatorQueue, getOperators, getSession, readSession, returnToBot, takeSession, updateOperatorStatus } from '../services/api'
 import { clearOperatorIdentity, loadOperatorIdentity, normalizeOperator, saveOperatorIdentity } from '../services/operatorIdentity'
 
@@ -177,7 +178,7 @@ export default function OperatorPage() {
   }
 
   if (!operator) return <main className="operator-entry-shell"><form className="operator-entry-card" onSubmit={enter}>
-    <div className="operator-entry-mark">D</div>
+    <BrandMark className="operator-entry-mark" />
     <span className="operator-entry-eyebrow">DANA LinkChat</span>
     <h1>Panel de operadores</h1>
     <p>Ingresa tus datos para atender conversaciones desde esta consola.</p>
@@ -191,6 +192,6 @@ export default function OperatorPage() {
 
   return <main className={`operator-shell ${activeCode ? 'operator-shell-chat-open' : ''} ${tab === 'settings' ? 'operator-shell-settings-open' : ''}`}>
     <OperatorSidebar operator={operator} queue={queue} activeCode={activeCode} currentSession={currentSession} tab={tab} onTab={selectTab} onSelect={(code) => navigate(code, 'assigned')} onTake={take} onExit={exit} onRefresh={refresh} busy={busy} error={error || syncError} now={now} />
-    {tab === 'settings' ? <OperatorSettings currentOperator={operator} onOperatorChanged={handleOperatorChanged} onBack={() => navigate()} /> : activeCode ? <OperatorChat code={activeCode} operator={operator} onBack={() => navigate('', tab)} onTake={take} onReturn={release} onSession={handleSession} busy={busy} actionError={error} /> : <section className="operator-placeholder"><div className="operator-placeholder-mark">D</div><h1>{tab === 'assigned' ? 'Mis conversaciones' : 'Cola de atención'}</h1><p>{tab === 'assigned' ? 'Selecciona tu conversación activa para continuar.' : 'Selecciona una conversación de la cola para comenzar a atenderla.'}</p></section>}
+    {tab === 'settings' ? <OperatorSettings currentOperator={operator} onOperatorChanged={handleOperatorChanged} onBack={() => navigate()} /> : activeCode ? <OperatorChat code={activeCode} operator={operator} onBack={() => navigate('', tab)} onTake={take} onReturn={release} onSession={handleSession} busy={busy} actionError={error} /> : <section className="operator-placeholder"><BrandMark className="operator-placeholder-mark" /><h1>{tab === 'assigned' ? 'Mis conversaciones' : 'Cola de atención'}</h1><p>{tab === 'assigned' ? 'Selecciona tu conversación activa para continuar.' : 'Selecciona una conversación de la cola para comenzar a atenderla.'}</p></section>}
   </main>
 }
