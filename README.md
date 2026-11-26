@@ -12,7 +12,7 @@ npm run dev
 npm run build
 ```
 
-Abra una sesión válida en `/c/:sessionToken`. El panel de operadores está en `/operator`, la lista real de asesores en `/operator/settings` y una conversación activa puede abrirse en `/operator/chat/:sessionCode`. La ruta `/` muestra el estado de sesión no disponible. `npm run build` genera el sitio estático en `dist/`.
+Abra una sesión válida en `/c/:sessionToken`. El panel de operadores está en `/` y `/operator`, la lista real de asesores en `/operator/settings` y una conversación activa puede abrirse en `/operator/chat/:sessionCode`. `npm run build` genera el sitio estático en `dist/`.
 
 ## Configuración
 
