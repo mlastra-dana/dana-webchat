@@ -10,5 +10,7 @@ yarn-error.log*
 pnpm-debug.log*
 .vscode/
 .idea/
+__pycache__/
+*.pyc
 coverage/
 .amplify/

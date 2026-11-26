@@ -97,7 +97,7 @@ export default function OperatorChat({ code, operator, onBack, onTake, onReturn,
             const outbound = role === 'operator' || (role === 'assistant' && message.metadata?.operatorId)
             const kind = role === 'system' ? 'system' : outbound ? 'operator' : role === 'user' ? 'customer' : 'bot'
             return <div className={`operator-message operator-message-${kind}`} key={message.id || `${message.createdAt}-${index}`}>
-              <div className="operator-message-bubble">{kind === 'bot' && <small>Bot</small>}<p>{message.text}</p><time>{messageTime(message.createdAt)}</time></div>
+              <div className="operator-message-bubble">{kind === 'bot' && <small>Bot</small>}<p>{message.text}</p>{message.mediaUrl?.startsWith('https://') && <a className="operator-media-link" href={message.mediaUrl} target="_blank" rel="noopener noreferrer">Ver archivo adjunto</a>}<time>{messageTime(message.createdAt)}</time></div>
             </div>
           })}
         </div>}

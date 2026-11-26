@@ -50,6 +50,27 @@ export async function sendAction(code, action) {
   })
 }
 
+export async function uploadPaymentProof(code, file) {
+  const path = sessionPath(code)
+  const data = { fileName: file.name, contentType: file.type, size: file.size, sender: 'user' }
+  const upload = await request(`${path}/media/presign`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+  const uploadUrl = new URL(upload.uploadUrl)
+  if (uploadUrl.protocol !== 'https:' || !upload.mediaKey) throw new Error('La API no devolvió una URL segura para subir el comprobante.')
+  const put = await fetch(uploadUrl.href, {
+    method: 'PUT',
+    headers: upload.uploadHeaders || { 'Content-Type': file.type },
+    body: file,
+  })
+  if (!put.ok) throw new Error(`No se pudo subir el comprobante a S3 (${put.status}).`)
+  return request(`${path}/media/confirm`, {
+    method: 'POST',
+    body: JSON.stringify({ ...data, mediaKey: upload.mediaKey }),
+  })
+}
+
 function expectList(data, key) {
   if (!Array.isArray(data?.[key])) throw new Error(`La API no devolvió ${key} en un formato válido.`)
   return data[key]

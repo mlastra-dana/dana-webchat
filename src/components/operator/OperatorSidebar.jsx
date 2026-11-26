@@ -7,7 +7,7 @@ function formatMoney(value, currency) {
 }
 
 function waitingSince(session) {
-  const action = [...(session.messages || [])].reverse().find((message) => message.metadata?.action === 'TALK_TO_AGENT')
+  const action = [...(session.messages || [])].reverse().find((message) => message.metadata?.action === 'TALK_TO_AGENT' || message.metadata?.event === 'RECEIPT_REVIEW')
   return session.waitingSince || action?.createdAt || session.createdAt
 }
 
@@ -47,7 +47,7 @@ export default function OperatorSidebar({ operator, queue, activeCode, currentSe
       {tab === 'waiting' && (orderedQueue.length ? orderedQueue.map((session) => <article className={`operator-list-card ${activeCode === session.code ? 'selected' : ''}`} key={session.code}>
         <div className="operator-list-card-top"><strong>{session.customer?.firstName || 'Cliente'}</strong><span><Clock3 size={13} />Esperando {waitLabel(waitingSince(session), now)}</span></div>
         <div className="operator-list-card-meta"><strong>{formatMoney(session.collection?.balance, session.collection?.currency)}</strong><span>Ref. {session.collection?.reference || '—'}</span></div>
-        <div className="operator-list-card-bottom"><span className="operator-waiting-pill">WAITING_AGENT</span><button type="button" onClick={() => onTake(session.code)} disabled={busy || !operator.active || !operator.available || Boolean(operator.currentSessionCode)}>Tomar conversación</button></div>
+        <div className="operator-list-card-bottom"><span className="operator-waiting-pill">{session.flowStep === 'PAYMENT_REVIEW' ? 'Revisar comprobante' : 'WAITING_AGENT'}</span><button type="button" onClick={() => onTake(session.code)} disabled={busy || !operator.active || !operator.available || Boolean(operator.currentSessionCode)}>Tomar conversación</button></div>
       </article>) : <div className="operator-empty-list"><Headset size={25} /><strong>Sin conversaciones esperando</strong><span>Las solicitudes aparecerán aquí automáticamente.</span></div>)}
       {tab === 'assigned' && (assignedCode ? <button type="button" className={`operator-list-card operator-assigned-card ${activeCode === assignedCode ? 'selected' : ''}`} onClick={() => onSelect(assignedCode)}><strong>{assigned?.customer?.firstName || 'Conversación en atención'}</strong><span>{assigned?.collection ? `${formatMoney(assigned.collection.balance, assigned.collection.currency)} · Ref. ${assigned.collection.reference || '—'}` : `Sesión ${assignedCode}`}</span><small>En atención · Abrir conversación</small></button> : <div className="operator-empty-list"><Headset size={25} /><strong>Sin conversación activa</strong><span>Toma una solicitud de la cola para comenzar.</span></div>)}
     </div>}

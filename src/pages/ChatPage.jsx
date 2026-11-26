@@ -6,10 +6,12 @@ import DebtCard from '../components/DebtCard'
 import PoweredByDana from '../components/PoweredByDana'
 import QuickActions from '../components/QuickActions'
 import SystemMessage from '../components/SystemMessage'
-import { getSession, readSession, sendAction, sendMessage } from '../services/api'
+import PaymentProofUploader from '../components/PaymentProofUploader'
+import { getSession, readSession, sendAction, sendMessage, uploadPaymentProof } from '../services/api'
 
-const actions = { pay: 'PAY_NOW', detail: 'VIEW_DETAIL', advisor: 'TALK_TO_AGENT' }
+const actions = { pay: 'PAY_NOW', detail: 'VIEW_DETAIL', advisor: 'TALK_TO_AGENT', back: 'BACK_HOME' }
 const quickActions = ['pay', 'detail', 'advisor']
+const actionKeys = { PAY_NOW: 'pay', VIEW_DETAIL: 'detail', TALK_TO_AGENT: 'advisor', BACK_HOME: 'back' }
 
 function messageTime(createdAt) {
   const date = new Date(createdAt)
@@ -76,7 +78,7 @@ export default function ChatPage({ sessionToken }) {
   }, [session?.messages, session?.mode])
 
   useEffect(() => {
-    if (!sessionToken || !['WAITING_AGENT', 'AGENT'].includes(session?.mode)) return
+    if (!sessionToken || !(['WAITING_AGENT', 'AGENT'].includes(session?.mode) || session?.flowStep === 'PAYMENT_REVIEW')) return
     let active = true
     let busy = false
     async function refresh() {
@@ -127,12 +129,21 @@ export default function ChatPage({ sessionToken }) {
     finally { setSending(false) }
   }
 
+  async function handleProofUpload(file) {
+    if (sending) return
+    setSending(true)
+    setError('')
+    nearBottomRef.current = true
+    try { await applyResponse(await uploadPaymentProof(sessionToken, file)) }
+    finally { setSending(false) }
+  }
+
   function renderMessage(item, index) {
     if (!item?.text) return null
     const key = item.id || `${item.createdAt || 'message'}-${index}`
     if (item.role === 'assistant' || item.role === 'user') {
       const fromOperator = item.role === 'assistant' && (item.metadata?.source === 'operator' || Boolean(item.metadata?.operatorId))
-      return <ChatMessage key={key} message={{ type: item.role === 'user' ? 'outgoing' : 'incoming', text: item.text, time: messageTime(item.createdAt) }} advisor={fromOperator} companyName={session.brand?.companyName} operatorName={item.metadata?.operatorName || session.assignedOperatorName} />
+      return <ChatMessage key={key} message={{ type: item.role === 'user' ? 'outgoing' : 'incoming', text: item.text, time: messageTime(item.createdAt), mediaUrl: secureUrl(item.mediaUrl) }} advisor={fromOperator} companyName={session.brand?.companyName} operatorName={item.metadata?.operatorName || session.assignedOperatorName} />
     }
     return <SystemMessage key={key} text={item.text} />
   }
@@ -142,7 +153,10 @@ export default function ChatPage({ sessionToken }) {
   }
 
   const summaryIndex = Math.min(initialMessageCount.current, session.messages.length)
-  const paymentUrl = secureUrl(actionUrl || session.collection?.paymentUrl)
+  const paymentUrl = secureUrl(session.ui ? (session.ui.showPaymentButton ? session.ui.paymentUrl : '') : actionUrl || session.collection?.paymentUrl)
+  const showSummary = session.ui?.showSummaryCard ?? true
+  const visibleActions = session.ui ? (session.ui.availableActions || []).map((item) => actionKeys[item]).filter(Boolean) : session.mode === 'BOT' ? quickActions : []
+  const allowProof = session.mode === 'BOT' && (session.ui?.allowReceiptUpload || ['WAITING_PAYMENT_PROOF', 'PAYMENT_MISMATCH'].includes(session.flowStep))
 
   return <main className="app-shell">
     <div className="chat-window">
@@ -150,10 +164,10 @@ export default function ChatPage({ sessionToken }) {
       <div className="conversation-scroll" ref={scrollRef} onScroll={trackScroll}>
         <div className="conversation-content" aria-live="polite" aria-relevant="additions">
           {session.messages.slice(0, summaryIndex).map(renderMessage)}
-          {session.collection && <DebtCard collection={session.collection} />}
-          {session.mode === 'BOT' && <QuickActions items={quickActions} onAction={handleAction} disabled={sending} />}
+          {session.collection && showSummary && <DebtCard collection={session.collection} />}
+          {session.mode === 'BOT' && visibleActions.length > 0 && <QuickActions items={visibleActions} onAction={handleAction} disabled={sending} />}
           {session.messages.slice(summaryIndex).map((item, index) => renderMessage(item, summaryIndex + index))}
-          {session.mode === 'WAITING_AGENT' && <SystemMessage text="Estamos buscando un asesor disponible." />}
+          {allowProof && <PaymentProofUploader onUpload={handleProofUpload} disabled={sending} />}
           {paymentUrl && <div className="cta-row"><a className="payment-cta" href={paymentUrl} target="_blank" rel="noopener noreferrer">Continuar al pago</a></div>}
           {error && <div className="error-note" role="alert">{error}</div>}
         </div>

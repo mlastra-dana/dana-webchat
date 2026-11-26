@@ -11,6 +11,7 @@ export default function ChatMessage({ message, advisor = false, companyName, ope
     {!outgoing && <Avatar advisor={advisor} companyName={companyName} operatorName={operatorName} />}
     <div className={`message-bubble ${outgoing ? 'message-bubble-outgoing' : ''}`}>
       <p>{message.text}</p>
+      {message.mediaUrl && <a className="message-media-link" href={message.mediaUrl} target="_blank" rel="noopener noreferrer">Ver archivo adjunto</a>}
       <time className="message-time">{message.time}</time>
     </div>
   </div>

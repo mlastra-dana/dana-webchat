@@ -1,9 +1,10 @@
-import { CreditCard, FileText, Headset } from 'lucide-react'
+import { ArrowLeft, CreditCard, FileText, Headset } from 'lucide-react'
 
 const actions = {
   pay: { label: 'Pagar ahora', Icon: CreditCard },
   detail: { label: 'Ver detalle', Icon: FileText },
   advisor: { label: 'Hablar con un asesor', Icon: Headset },
+  back: { label: 'Volver al inicio', Icon: ArrowLeft },
 }
 
 export default function QuickActions({ items, onAction, compact = false, disabled = false }) {

@@ -278,6 +278,22 @@ button:disabled { cursor: not-allowed; }
 @media (max-width: 640px) { .operator-sidebar-top, .operator-chat-header { min-height: 60px; padding-top: max(7px, env(safe-area-inset-top)); } .operator-chat-header { padding-right: 9px; padding-left: 8px; gap: 2px; } .operator-return-button { padding: 6px; font-size: 0; } .operator-return-button svg { width: 18px; height: 18px; } .operator-messages { padding: 14px 11px; } .operator-message-bubble { max-width: 85%; } .operator-chat-footer .composer { padding: 8px 10px max(10px, env(safe-area-inset-bottom)); } .operator-chat-footer .attachment-menu { left: 0; } .operator-entry-card { padding: 24px 20px; } }
 .operator-availability { position: relative; }
 .operator-availability input { top: 50%; left: 0; z-index: 1; width: 31px; height: 18px; margin: 0; transform: translateY(-50%); cursor: pointer; }
+.proof-card { width: min(calc(100% - 37px), 450px); margin: 4px 0 14px 37px; padding: 14px; border: 1px solid #e8dff4; border-radius: 14px; background: white; box-shadow: 0 6px 22px rgba(39,21,73,.055); }
+.proof-card-heading { display: flex; align-items: center; gap: 8px; color: #4B16B6; font-size: 13px; }
+.proof-card p { margin: 7px 0 13px; color: #625a6e; font-size: 12px; line-height: 1.45; }
+.proof-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.proof-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 8px 11px; border: 1px solid #ddd0f2; border-radius: 9px; background: #f3edff; color: #4B16B6; font-size: 12px; font-weight: 700; }
+.proof-actions .proof-submit { border-color: #4B16B6; background: #4B16B6; color: white; }
+.proof-actions button:disabled { opacity: .55; }
+.proof-preview { display: flex; align-items: center; gap: 9px; min-width: 0; margin-bottom: 11px; padding: 7px; border-radius: 9px; background: #fbfaff; }
+.proof-preview img { width: 44px; height: 44px; border-radius: 7px; object-fit: cover; }
+.proof-preview > div { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 3px; }
+.proof-preview strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.proof-preview small { color: #817b8e; font-size: 10px; }
+.proof-preview button { display: grid; place-items: center; width: 27px; height: 27px; border: 0; background: transparent; color: #706b81; }
+.proof-error { margin-bottom: 9px; color: #a12031; font-size: 12px; }
+.message-media-link, .operator-media-link { display: inline-block; margin-top: 6px; color: inherit; font-size: 12px; font-weight: 700; text-decoration: underline; }
+@media (max-width: 640px) { .proof-card { width: calc(100% - 35px); margin-left: 35px; } }
 .operator-tabs { display: flex; flex-direction: column; gap: 3px; padding: 10px; }
 .operator-tabs button { justify-content: flex-start; width: 100%; min-height: 40px; padding: 0 11px; border: 0; border-radius: 9px; text-align: left; }
 .operator-tabs button.active { background: #f3edff; }
