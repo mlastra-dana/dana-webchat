@@ -302,6 +302,13 @@ def public_message_view(message):
     return result
 
 
+def receipt_is_matched(session):
+    return (
+        (session.get("paymentValidation") or {}).get("result") == "MATCH"
+        or (session.get("collection") or {}).get("status") in {"RECEIPT_MATCHED", "PAID"}
+    )
+
+
 def build_ui_state(session):
     mode = session.get("MODE") or "BOT"
     step = session.get("FLOW_STEP") or "HOME"
@@ -325,6 +332,11 @@ def build_ui_state(session):
         return ui
 
     if mode == "AGENT":
+        return ui
+
+    if receipt_is_matched(session):
+        ui["showSummaryCard"] = True
+        ui["availableActions"] = ["TALK_TO_AGENT"]
         return ui
 
     if step == "HOME":
@@ -877,7 +889,7 @@ def create_session(data):
     welcome_messages = [
         make_message(
             "assistant",
-            f"Hola {first_name}. Aquí tienes tu saldo pendiente.",
+            f"Hola {first_name}. Aquí tienes el estado de tu cuenta.",
         )
     ]
 
@@ -948,6 +960,9 @@ def bedrock_system_prompt(session):
     due_date = clean_text(collection.get("dueDate"), 40)
     reference = clean_text(collection.get("reference"), 100)
     flow_step = clean_text(session.get("FLOW_STEP") or "HOME", 80)
+    payment_confirmed = receipt_is_matched(session)
+    receipt_status = "pago acreditado" if payment_confirmed else "sin pago acreditado"
+    balance_label = "Monto pagado" if payment_confirmed else "Saldo pendiente"
 
     return f"""
 Eres el asistente digital de cobranza de {company_name} dentro de DANA LinkChat.
@@ -956,23 +971,24 @@ Tu funcion es atender de manera breve, clara, respetuosa y profesional un proces
 
 Contexto autorizado de esta sesion:
 - Cliente: {first_name}
-- Saldo pendiente: {currency} {balance}
+- {balance_label}: {currency} {balance}
 - Fecha limite: {due_date}
 - Referencia: {reference}
 - Etapa actual del flujo: {flow_step}
+- Estado del comprobante: {receipt_status}
 
 REGLAS OBLIGATORIAS:
 1. No inventes montos, fechas, referencias, descuentos, acuerdos ni informacion del cliente.
 2. No negocies refinanciamientos, promesas de pago, quitas, descuentos ni nuevas fechas.
 3. No solicites numeros completos de tarjeta, CVV, claves, contrasenas ni datos bancarios sensibles.
-4. Si preguntan como pagar, indica que pueden usar la opcion "Pagar ahora".
+4. Si preguntan como pagar y aun no hay pago acreditado, indica que pueden usar la opcion "Pagar ahora". Si el pago ya esta acreditado, no sugieras pagar otra vez.
 5. Si necesitan una excepcion, negociacion, reclamo o algo fuera de la informacion disponible, indica que pueden solicitar "Hablar con un asesor".
 6. No digas que eres WhatsApp ni imites una marca externa.
 7. Responde normalmente en espanol.
 8. Mantente en el contexto de cobranza y no hagas afirmaciones que no esten respaldadas por la sesion.
 9. Responde directamente en una o dos frases breves (maximo 30 palabras). No repitas el saldo, la fecha ni la referencia si ya aparecen en el resumen, salvo que el cliente los pregunte.
 10. Si la etapa es WAITING_PAYMENT_PROOF, indica que puede adjuntar el comprobante desde el chat.
-11. Nunca afirmes que un pago fue acreditado al banco solo porque un comprobante parece valido.
+11. En esta demo, MATCH significa pago acreditado. No afirmes eso para REVIEW, MISMATCH o INVALID_RECEIPT.
 """.strip()
 
 
@@ -1115,6 +1131,9 @@ def process_customer_action(code, data):
 
     action = clean_text(data.get("action"), 80).upper()
     collection = session.get("collection", {})
+
+    if receipt_is_matched(session) and action in {"PAY_NOW", "VIEW_DETAIL", "BACK_HOME"}:
+        return 409, {"success": False, "error": "payment_already_confirmed"}
 
     if action == "PAY_NOW":
         session["FLOW_STEP"] = "WAITING_PAYMENT_PROOF"
@@ -1611,10 +1630,10 @@ def confirm_media_upload(code, data):
 
             if result == "MATCH":
                 session["FLOW_STEP"] = "PAYMENT_MATCHED"
-                session["collection"]["status"] = "RECEIPT_MATCHED"
+                session["collection"]["status"] = "PAID"
                 reply = make_message(
                     "assistant",
-                    "Monto y moneda coinciden. Revisaremos el pago.",
+                    "Pago acreditado. Gracias.",
                     metadata={"event": "RECEIPT_MATCHED", "validation": "MATCH"},
                 )
                 session["messages"].append(reply)
@@ -1961,7 +1980,7 @@ def release_session_to_bot(code, data):
 
     session["MODE"] = "BOT"
     if session.get("FLOW_STEP") in {"AGENT", "WAITING_AGENT", "PAYMENT_REVIEW"}:
-        session["FLOW_STEP"] = "HOME"
+        session["FLOW_STEP"] = "PAYMENT_MATCHED" if receipt_is_matched(session) else "HOME"
     session["assignedOperatorId"] = ""
     session["assignedOperatorName"] = ""
     session["messages"].append(

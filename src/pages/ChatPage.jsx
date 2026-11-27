@@ -34,7 +34,6 @@ export default function ChatPage({ sessionToken }) {
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
   const [actionUrl, setActionUrl] = useState('')
-  const initialMessageCount = useRef(0)
   const scrollRef = useRef(null)
   const nearBottomRef = useRef(true)
   const scrollInitializedRef = useRef(false)
@@ -46,7 +45,6 @@ export default function ChatPage({ sessionToken }) {
     setLoadError('')
     setError('')
     setActionUrl('')
-    initialMessageCount.current = 0
     nearBottomRef.current = true
     scrollInitializedRef.current = false
 
@@ -58,7 +56,6 @@ export default function ChatPage({ sessionToken }) {
     getSession(sessionToken)
       .then((nextSession) => {
         if (!active) return
-        initialMessageCount.current = nextSession.messages.length
         document.title = `${nextSession.brand?.companyName || 'DANA LinkChat'} · ${nextSession.brand?.subtitle || 'Atención digital'}`
         setSession(nextSession)
       })
@@ -123,7 +120,7 @@ export default function ChatPage({ sessionToken }) {
   }
 
   async function handleAction(action) {
-    if (sending || !actions[action]) return
+    if (sending || !actions[action] || (receiptMatched && action === 'pay')) return
     setSending(true)
     setError('')
     try { await applyResponse(await sendAction(sessionToken, actions[action])) }
@@ -145,7 +142,11 @@ export default function ChatPage({ sessionToken }) {
     const key = item.id || `${item.createdAt || 'message'}-${index}`
     if (item.role === 'assistant' || item.role === 'user') {
       const fromOperator = item.role === 'assistant' && (item.metadata?.source === 'operator' || Boolean(item.metadata?.operatorId))
-      return <ChatMessage key={key} message={{ type: item.role === 'user' ? 'outgoing' : 'incoming', text: item.text, time: messageTime(item.createdAt), mediaUrl: secureUrl(item.mediaUrl) }} advisor={fromOperator} companyName={session.brand?.companyName} operatorName={item.metadata?.operatorName || session.assignedOperatorName} />
+      let text = receiptMatched && item.metadata?.event === 'RECEIPT_MATCHED' ? 'Pago acreditado. Gracias.' : item.text
+      if (receiptMatched && index === 0) {
+        text = text.replace(/(?:Este es el detalle de tu saldo pendiente|Aquí tienes tu saldo pendiente)\.?/, 'Aquí tienes el estado de tu cuenta.')
+      }
+      return <ChatMessage key={key} message={{ type: item.role === 'user' ? 'outgoing' : 'incoming', text, time: messageTime(item.createdAt), mediaUrl: secureUrl(item.mediaUrl) }} advisor={fromOperator} companyName={session.brand?.companyName} operatorName={item.metadata?.operatorName || session.assignedOperatorName} />
     }
     return <SystemMessage key={key} text={item.text} />
   }
@@ -154,11 +155,12 @@ export default function ChatPage({ sessionToken }) {
     return <main className="app-shell"><div className="chat-window"><div className="session-state" role={loading ? 'status' : 'alert'}>{loading ? 'Cargando conversación...' : loadError || 'Esta sesión no está disponible o ha expirado.'}</div></div></main>
   }
 
-  const summaryIndex = Math.min(initialMessageCount.current, session.messages.length)
-  const paymentUrl = secureUrl(session.ui ? (session.ui.showPaymentButton ? session.ui.paymentUrl : '') : actionUrl || session.collection?.paymentUrl)
-  const showSummary = session.ui?.showSummaryCard ?? true
-  const visibleActions = session.ui ? (session.ui.availableActions || []).map((item) => actionKeys[item]).filter(Boolean) : session.mode === 'BOT' ? quickActions : []
-  const allowProof = session.mode === 'BOT' && (session.ui?.allowReceiptUpload || ['WAITING_PAYMENT_PROOF', 'PAYMENT_MISMATCH'].includes(session.flowStep))
+  const receiptMatched = session.paymentValidation?.result === 'MATCH' || ['RECEIPT_MATCHED', 'PAID'].includes(session.collection?.status)
+  const summaryIndex = Math.min(1, session.messages.length)
+  const paymentUrl = receiptMatched ? '' : secureUrl(session.ui ? (session.ui.showPaymentButton ? session.ui.paymentUrl : '') : actionUrl || session.collection?.paymentUrl)
+  const showSummary = receiptMatched || (session.ui?.showSummaryCard ?? true)
+  const visibleActions = (session.ui ? (session.ui.availableActions || []).map((item) => actionKeys[item]).filter(Boolean) : session.mode === 'BOT' ? quickActions : []).filter((item) => !receiptMatched || item === 'advisor')
+  const allowProof = !receiptMatched && session.mode === 'BOT' && (session.ui?.allowReceiptUpload || ['WAITING_PAYMENT_PROOF', 'PAYMENT_MISMATCH'].includes(session.flowStep))
 
   return <main className="app-shell">
     <div className="chat-window">
@@ -167,10 +169,10 @@ export default function ChatPage({ sessionToken }) {
       <div className="conversation-scroll" ref={scrollRef} onScroll={trackScroll}>
         <div className="conversation-content" aria-live="polite" aria-relevant="additions">
           {session.messages.slice(0, summaryIndex).map(renderMessage)}
-          {session.collection && showSummary && <DebtCard collection={session.collection} />}
+          {session.collection && showSummary && <DebtCard collection={session.collection} receiptMatched={receiptMatched} />}
           {session.mode === 'BOT' && visibleActions.length > 0 && <QuickActions items={visibleActions} onAction={handleAction} disabled={sending} />}
           {session.messages.slice(summaryIndex).map((item, index) => renderMessage(item, summaryIndex + index))}
-          <PaymentValidationNotice validation={['PAYMENT_MATCHED', 'PAYMENT_MISMATCH', 'PAYMENT_REVIEW'].includes(session.flowStep) ? session.paymentValidation : null} waitingForAgent={session.mode === 'WAITING_AGENT'} />
+          <PaymentValidationNotice validation={(!receiptMatched || !session.collection) && ['PAYMENT_MATCHED', 'PAYMENT_MISMATCH', 'PAYMENT_REVIEW'].includes(session.flowStep) ? session.paymentValidation : null} waitingForAgent={session.mode === 'WAITING_AGENT'} />
           {allowProof && <PaymentProofUploader onUpload={handleProofUpload} disabled={sending} />}
           {paymentUrl && <div className="cta-row"><a className="payment-cta" href={paymentUrl} target="_blank" rel="noopener noreferrer">Continuar al pago</a></div>}
           {error && <div className="error-note" role="alert">{error}</div>}

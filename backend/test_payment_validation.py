@@ -185,7 +185,8 @@ class MediaFlowTests(unittest.TestCase):
         self.assertEqual(self.table.item['paymentValidation']['confidence'], Decimal('0.94'))
         self.assertIsInstance(self.table.item['paymentValidation']['confidence'], Decimal)
         self.assertEqual(self.session['paymentValidation']['confidence'], 0.94)
-        self.assertEqual(self.session['collection']['status'], 'RECEIPT_MATCHED')
+        self.assertEqual(self.session['collection']['status'], 'PAID')
+        self.assertEqual(self.session['messages'][-1]['text'], 'Pago acreditado. Gracias.')
         self.assertEqual(self.session['messages'][0]['type'], 'image')
 
     def test_confirm_mismatch_allows_another_receipt(self):
@@ -234,6 +235,36 @@ class MediaFlowTests(unittest.TestCase):
         self.assertEqual(body['error'], 'content_type_mismatch')
 
 
+class MatchedReceiptLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.session = {
+            'CODE': 'test-code', 'MODE': 'BOT', 'FLOW_STEP': 'HOME',
+            'collection': {'status': 'PAID', 'balance': Decimal('64024.00')},
+            'paymentValidation': {'result': 'MATCH'}, 'messages': [],
+        }
+        self.context = load_functions(
+            'clean_text', 'receipt_is_matched', 'build_ui_state',
+            'process_customer_action',
+            get_session=lambda _code: self.session,
+            WEBCHAT_BASE_URL='https://example.invalid',
+        )
+
+    def test_reopening_matched_session_only_offers_an_advisor(self):
+        ui = self.context['build_ui_state'](self.session)
+        self.assertTrue(ui['showSummaryCard'])
+        self.assertEqual(ui['availableActions'], ['TALK_TO_AGENT'])
+        self.assertFalse(ui['allowReceiptUpload'])
+        self.assertFalse(ui['showPaymentButton'])
+
+    def test_matched_receipt_cannot_restart_payment(self):
+        for action in ('PAY_NOW', 'BACK_HOME', 'VIEW_DETAIL'):
+            status, body = self.context['process_customer_action'](
+                'test-code', {'action': action})
+            self.assertEqual(status, 409)
+            self.assertEqual(body['error'], 'payment_already_confirmed')
+            self.assertEqual(self.session['FLOW_STEP'], 'HOME')
+
+
 class FakeChime:
     def __init__(self):
         self.meeting = {'MeetingId': 'meeting-1', 'ExternalMeetingId': 'linkchat-test-code',
@@ -272,7 +303,7 @@ class OperatorAndChimeTests(unittest.TestCase):
                  'deep_native_to_decimal', 'call_public_view', 'chime_join_payload',
                  'get_active_meeting', 'validate_call_actor', 'create_chime_attendee',
                  'start_call', 'accept_call', 'join_call', 'end_call', 'save_session',
-                 'operator_public_view', 'take_session', 'operator_send_message',
+                 'receipt_is_matched', 'operator_public_view', 'take_session', 'operator_send_message',
                  'release_session_to_bot')
         self.context = load_functions(
             *names, get_session=lambda _code: self.session,
@@ -301,6 +332,16 @@ class OperatorAndChimeTests(unittest.TestCase):
         self.assertEqual(body['session']['MODE'], 'BOT')
         self.assertEqual(self.operator_table.item['CURRENT_SESSION_CODE'], '')
         self.assertEqual(self.operator_table.item['AVAILABLE'], True)
+
+    def test_return_to_bot_preserves_matched_receipt(self):
+        self.session['paymentValidation'] = {'result': 'MATCH', 'confidence': Decimal('0.94')}
+        self.session['collection']['status'] = 'PAID'
+        self.assertEqual(self.take()[0], 200)
+        status, body = self.context['release_session_to_bot']('test-code',
+            {'operatorId': 'op-1'})
+        self.assertEqual(status, 200)
+        self.assertEqual(body['session']['FLOW_STEP'], 'PAYMENT_MATCHED')
+        self.assertEqual(body['session']['collection']['status'], 'PAID')
 
     def test_chime_start_accept_join_end(self):
         self.assertEqual(self.take()[0], 200)

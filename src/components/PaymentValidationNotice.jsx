@@ -1,7 +1,7 @@
 import { FileCheck2, FileQuestion, SearchCheck } from 'lucide-react'
 
 const notices = {
-  MATCH: { label: 'Comprobante recibido', Icon: FileCheck2 },
+  MATCH: { label: 'Pago acreditado', Icon: FileCheck2 },
   REVIEW: { label: 'El comprobante necesita revisión.', Icon: SearchCheck },
   INVALID_RECEIPT: { label: 'El archivo no parece ser un comprobante de pago.', Icon: FileQuestion },
 }
