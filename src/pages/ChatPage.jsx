@@ -6,10 +6,9 @@ import DebtCard from '../components/DebtCard'
 import PoweredByDana from '../components/PoweredByDana'
 import QuickActions from '../components/QuickActions'
 import SystemMessage from '../components/SystemMessage'
-import PaymentProofUploader from '../components/PaymentProofUploader'
 import PaymentValidationNotice from '../components/PaymentValidationNotice'
 import AudioCall from '../components/AudioCall'
-import { getSession, readSession, sendAction, sendMessage, uploadPaymentProof } from '../services/api'
+import { getSession, readSession, sendAction, sendMessage, uploadMedia } from '../services/api'
 
 const actions = { pay: 'PAY_NOW', advisor: 'TALK_TO_AGENT', back: 'BACK_HOME' }
 const quickActions = ['pay', 'advisor']
@@ -124,17 +123,27 @@ export default function ChatPage({ sessionToken }) {
     setSending(true)
     setError('')
     try { await applyResponse(await sendAction(sessionToken, actions[action])) }
-    catch (cause) { setError(`No se pudo procesar la opción. ${cause.message}`) }
+    catch (cause) {
+      if (cause.message === 'payment_already_confirmed') {
+        try { setSession(await getSession(sessionToken)); setError('') }
+        catch { setError('El pago ya está acreditado.') }
+      } else setError(`No se pudo procesar la opción. ${cause.message}`)
+    }
     finally { setSending(false) }
   }
 
-  async function handleProofUpload(file) {
-    if (sending) return
+  async function handleSendFile(file) {
+    if (sending) return false
     setSending(true)
     setError('')
     nearBottomRef.current = true
-    try { await applyResponse(await uploadPaymentProof(sessionToken, file)) }
-    finally { setSending(false) }
+    try {
+      await applyResponse(await uploadMedia(sessionToken, file))
+      return true
+    } catch (cause) {
+      setError(`No se pudo enviar el archivo. ${cause.message}`)
+      return false
+    } finally { setSending(false) }
   }
 
   function renderMessage(item, index) {
@@ -146,7 +155,7 @@ export default function ChatPage({ sessionToken }) {
       if (receiptMatched && index === 0) {
         text = text.replace(/(?:Este es el detalle de tu saldo pendiente|Aquí tienes tu saldo pendiente)\.?/, 'Aquí tienes el estado de tu cuenta.')
       }
-      return <ChatMessage key={key} message={{ type: item.role === 'user' ? 'outgoing' : 'incoming', text, time: messageTime(item.createdAt), mediaUrl: secureUrl(item.mediaUrl) }} advisor={fromOperator} companyName={session.brand?.companyName} operatorName={item.metadata?.operatorName || session.assignedOperatorName} />
+      return <ChatMessage key={key} message={{ type: item.role === 'user' ? 'outgoing' : 'incoming', text, time: messageTime(item.createdAt), mediaUrl: secureUrl(item.mediaUrl), mediaType: item.type, fileName: item.fileName }} advisor={fromOperator} companyName={session.brand?.companyName} operatorName={item.metadata?.operatorName || session.assignedOperatorName} />
     }
     return <SystemMessage key={key} text={item.text} />
   }
@@ -160,7 +169,6 @@ export default function ChatPage({ sessionToken }) {
   const paymentUrl = receiptMatched ? '' : secureUrl(session.ui ? (session.ui.showPaymentButton ? session.ui.paymentUrl : '') : actionUrl || session.collection?.paymentUrl)
   const showSummary = receiptMatched || (session.ui?.showSummaryCard ?? true)
   const visibleActions = (session.ui ? (session.ui.availableActions || []).map((item) => actionKeys[item]).filter(Boolean) : session.mode === 'BOT' ? quickActions : []).filter((item) => !receiptMatched || item === 'advisor')
-  const allowProof = !receiptMatched && session.mode === 'BOT' && (session.ui?.allowReceiptUpload || ['WAITING_PAYMENT_PROOF', 'PAYMENT_MISMATCH'].includes(session.flowStep))
 
   return <main className="app-shell">
     <div className="chat-window">
@@ -173,12 +181,11 @@ export default function ChatPage({ sessionToken }) {
           {session.mode === 'BOT' && visibleActions.length > 0 && <QuickActions items={visibleActions} onAction={handleAction} disabled={sending} />}
           {session.messages.slice(summaryIndex).map((item, index) => renderMessage(item, summaryIndex + index))}
           <PaymentValidationNotice validation={(!receiptMatched || !session.collection) && ['PAYMENT_MATCHED', 'PAYMENT_MISMATCH', 'PAYMENT_REVIEW'].includes(session.flowStep) ? session.paymentValidation : null} waitingForAgent={session.mode === 'WAITING_AGENT'} />
-          {allowProof && <PaymentProofUploader onUpload={handleProofUpload} disabled={sending} />}
           {paymentUrl && <div className="cta-row"><a className="payment-cta" href={paymentUrl} target="_blank" rel="noopener noreferrer">Continuar al pago</a></div>}
           {error && <div className="error-note" role="alert">{error}</div>}
         </div>
       </div>
-      <div className="composer-area"><PoweredByDana /><ChatComposer onSend={handleSend} disabled={sending} /></div>
+      <div className="composer-area"><PoweredByDana /><ChatComposer onSend={handleSend} onSendFile={handleSendFile} disabled={sending} /></div>
     </div>
   </main>
 }

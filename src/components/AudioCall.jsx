@@ -79,26 +79,26 @@ export default function AudioCall({ code, session, sender, operatorId = '', onSe
 
   const call = session?.call || { status: 'IDLE' }
   const active = ['RINGING', 'IN_CALL'].includes(call.status)
-  const canStart = session?.mode === 'AGENT' && (sender === 'user' || session.assignedOperatorId === operatorId)
+  const canStart = sender === 'operator' && session?.mode === 'AGENT' && session.assignedOperatorId === operatorId
   if (!active && !canStart) return null
 
-  const incoming = call.status === 'RINGING' && call.initiatedBy !== sender
+  const incoming = sender === 'user' && call.status === 'RINGING' && call.initiatedBy === 'operator'
   const label = call.status === 'RINGING'
-    ? incoming ? `${call.initiatedByName || 'La otra persona'} te está llamando` : 'Llamando…'
+    ? incoming ? `${call.initiatedByName || 'Un asesor'} te está llamando. ¿Aceptas la llamada?` : 'Llamando…'
     : call.status === 'IN_CALL' ? joined ? 'Llamada de audio activa' : 'Llamada de audio en curso' : 'Llamada de audio'
 
   return <div className="audio-call" aria-live="polite">
     <audio ref={audioRef} autoPlay playsInline />
     <span className="audio-call-label">{label}</span>
     <div className="audio-call-actions">
-      {!active && <button type="button" onClick={() => act('start')} disabled={busy}><Phone size={16} /> Llamar</button>}
+      {canStart && !active && <button type="button" onClick={() => act('start')} disabled={busy}><Phone size={16} /> Llamar</button>}
       {incoming && <>
-        <button type="button" onClick={() => act('accept')} disabled={busy}><Phone size={16} /> Atender</button>
+        <button type="button" onClick={() => act('accept')} disabled={busy}><Phone size={16} /> Aceptar</button>
         <button type="button" className="audio-call-secondary" onClick={() => act('reject')} disabled={busy}><PhoneOff size={16} /> Rechazar</button>
       </>}
-      {active && !incoming && !joined && <button type="button" onClick={() => act('join')} disabled={busy}><Phone size={16} /> Conectarse</button>}
+      {active && !incoming && !joined && (sender === 'operator' || call.status === 'IN_CALL') && <button type="button" onClick={() => act('join')} disabled={busy}><Phone size={16} /> Conectarse</button>}
       {active && joined && <button type="button" className="audio-call-secondary" onClick={toggleMute} disabled={busy}>{muted ? <MicOff size={16} /> : <Mic size={16} />}{muted ? 'Activar micrófono' : 'Silenciar'}</button>}
-      {active && !incoming && <button type="button" className="audio-call-end" onClick={() => act('end')} disabled={busy}><PhoneOff size={16} /> Finalizar</button>}
+      {active && !incoming && (sender === 'operator' || call.status === 'IN_CALL') && <button type="button" className="audio-call-end" onClick={() => act('end')} disabled={busy}><PhoneOff size={16} /> Finalizar</button>}
     </div>
     {error && <span className="audio-call-error" role="alert">{error}</span>}
   </div>

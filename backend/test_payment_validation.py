@@ -157,7 +157,8 @@ class MediaFlowTests(unittest.TestCase):
             get_session=lambda _code: self.session, session_table=self.table,
             trim_messages=lambda items: items, now_iso=lambda: '2026-11-26T00:00:00Z',
             MEDIA_PREFIX='receipts', MEDIA_BUCKET='test-bucket', MEDIA_MAX_BYTES=1000,
-            ALLOWED_MEDIA_TYPES={'image/png': 'image'}, s3=self.s3,
+            ALLOWED_MEDIA_TYPES={'image/png': 'image', 'application/pdf': 'document',
+                                 'audio/webm': 'audio'}, s3=self.s3,
             make_message=message, session_public_view=lambda session: copy.deepcopy(session),
             public_message_view=lambda item: copy.deepcopy(item),
             analyze_payment_receipt=lambda *_args: self.analysis,
@@ -234,6 +235,23 @@ class MediaFlowTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body['error'], 'content_type_mismatch')
 
+    def test_documents_and_voice_notes_are_sent_without_receipt_validation(self):
+        for file_name, content_type, media_type in (
+            ('documento.pdf', 'application/pdf', 'document'),
+            ('nota.webm', 'audio/webm', 'audio'),
+        ):
+            with self.subTest(content_type=content_type):
+                self.data.update(fileName=file_name, contentType=content_type)
+                self.s3.head['ContentType'] = content_type
+                status, body = self.context['create_media_upload']('test-code', self.data)
+                self.assertEqual(status, 200)
+                self.assertEqual(body['mediaType'], media_type)
+                status, body = self.context['confirm_media_upload']('test-code',
+                    {**self.data, 'mediaKey': body['mediaKey']})
+                self.assertEqual(status, 200)
+                self.assertEqual(body['message']['type'], media_type)
+                self.assertIsNone(body['receiptValidation'])
+
 
 class MatchedReceiptLifecycleTests(unittest.TestCase):
     def setUp(self):
@@ -302,7 +320,7 @@ class OperatorAndChimeTests(unittest.TestCase):
         names = ('clean_text', 'parse_bool', 'deep_decimal_to_native',
                  'deep_native_to_decimal', 'call_public_view', 'chime_join_payload',
                  'get_active_meeting', 'validate_call_actor', 'create_chime_attendee',
-                 'start_call', 'accept_call', 'join_call', 'end_call', 'save_session',
+                 'start_call', 'accept_call', 'join_call', 'reject_call', 'end_call', 'save_session',
                  'receipt_is_matched', 'operator_public_view', 'take_session', 'operator_send_message',
                  'release_session_to_bot')
         self.context = load_functions(
@@ -345,11 +363,18 @@ class OperatorAndChimeTests(unittest.TestCase):
 
     def test_chime_start_accept_join_end(self):
         self.assertEqual(self.take()[0], 200)
+        status, denied = self.context['start_call']('test-code', {'sender': 'user'})
+        self.assertEqual((status, denied['error']), (403, 'operator_required_for_call'))
         status, started = self.context['start_call']('test-code',
             {'sender': 'operator', 'operatorId': 'op-1'})
         self.assertEqual(status, 200)
         self.assertEqual(started['call']['status'], 'RINGING')
         self.assertTrue(started['joinInfo']['attendee']['JoinToken'])
+        status, denied = self.context['join_call']('test-code', {'sender': 'user'})
+        self.assertEqual((status, denied['error']), (409, 'call_not_accepted'))
+        status, denied = self.context['accept_call']('test-code',
+            {'sender': 'operator', 'operatorId': 'op-1'})
+        self.assertEqual((status, denied['error']), (403, 'customer_required_to_accept_call'))
         status, accepted = self.context['accept_call']('test-code', {'sender': 'user'})
         self.assertEqual(status, 200)
         self.assertEqual(accepted['call']['status'], 'IN_CALL')
@@ -364,6 +389,17 @@ class OperatorAndChimeTests(unittest.TestCase):
         self.assertEqual(ended['call']['status'], 'ENDED')
         self.assertEqual(self.chime.deleted, ['meeting-1'])
         self.assertEqual(self.session_table.item['paymentValidation']['confidence'], Decimal('0.4'))
+
+    def test_customer_can_reject_operator_call(self):
+        self.assertEqual(self.take()[0], 200)
+        self.assertEqual(self.context['start_call']('test-code',
+            {'sender': 'operator', 'operatorId': 'op-1'})[0], 200)
+        status, denied = self.context['reject_call']('test-code',
+            {'sender': 'operator', 'operatorId': 'op-1'})
+        self.assertEqual((status, denied['error']), (403, 'customer_required_to_reject_call'))
+        status, rejected = self.context['reject_call']('test-code', {'sender': 'user'})
+        self.assertEqual(status, 200)
+        self.assertEqual(rejected['call']['status'], 'REJECTED')
 
 
 if __name__ == '__main__':

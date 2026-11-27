@@ -50,9 +50,9 @@ export async function sendAction(code, action) {
   })
 }
 
-export async function uploadPaymentProof(code, file) {
+export async function uploadMedia(code, file, sender = 'user', operatorId = '') {
   const path = sessionPath(code)
-  const data = { fileName: file.name, contentType: file.type, size: file.size, sender: 'user' }
+  const data = { fileName: file.name, contentType: file.type, size: file.size, sender, ...(sender === 'operator' ? { operatorId } : {}) }
   const upload = await request(`${path}/media/presign`, {
     method: 'POST',
     body: JSON.stringify(data),
@@ -69,6 +69,10 @@ export async function uploadPaymentProof(code, file) {
     method: 'POST',
     body: JSON.stringify({ ...data, mediaKey: upload.mediaKey }),
   })
+}
+
+export function uploadPaymentProof(code, file) {
+  return uploadMedia(code, file)
 }
 
 function expectList(data, key) {

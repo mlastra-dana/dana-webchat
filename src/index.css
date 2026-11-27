@@ -47,6 +47,8 @@ button:disabled { cursor: not-allowed; }
 .message-bubble p { margin: 0; font-size: 15px; line-height: 1.48; white-space: pre-line; overflow-wrap: anywhere; }
 .message-time { display: block; margin-top: 5px; color: #817b8e; font-size: 11px; text-align: right; }
 .message-bubble-outgoing .message-time { color: #e3d6ff; }
+.message-media-audio { display: block; width: min(100%, 300px); max-width: 100%; margin-top: 8px; }
+.message-media-image { display: block; width: min(100%, 300px); max-height: 260px; margin-top: 8px; border-radius: 10px; object-fit: contain; }
 .card-row { margin: 2px 0 17px 39px; animation: message-in .25s ease-out both; }
 .debt-card, .detail-card { width: min(100%, 390px); border: 1px solid #e8dff4; border-radius: 18px; background: #fff; overflow: hidden; box-shadow: 0 6px 22px rgba(39,21,73,.055); }
 .debt-card { padding: 19px 20px 17px; border-top: 3px solid #6D28E0; }

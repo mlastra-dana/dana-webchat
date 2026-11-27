@@ -487,6 +487,9 @@ def start_call(code, data):
     except PermissionError as exc:
         return 403, {"success": False, "error": str(exc)}
 
+    if sender != "operator":
+        return 403, {"success": False, "error": "operator_required_for_call"}
+
     current_call = session.get("call") or {}
     if current_call.get("status") in {"RINGING", "IN_CALL"}:
         return 409, {
@@ -571,6 +574,9 @@ def accept_call(code, data):
     except PermissionError as exc:
         return 403, {"success": False, "error": str(exc)}
 
+    if sender != "user":
+        return 403, {"success": False, "error": "customer_required_to_accept_call"}
+
     call = session.get("call") or {}
     if call.get("status") != "RINGING":
         return 409, {
@@ -637,6 +643,9 @@ def join_call(code, data):
             "call": call_public_view(session),
         }
 
+    if sender == "user" and call.get("status") != "IN_CALL":
+        return 409, {"success": False, "error": "call_not_accepted"}
+
     meeting = get_active_meeting(session)
     if not meeting:
         return 410, {"success": False, "error": "call_meeting_expired"}
@@ -665,6 +674,9 @@ def reject_call(code, data):
         return 400, {"success": False, "error": str(exc)}
     except PermissionError as exc:
         return 403, {"success": False, "error": str(exc)}
+
+    if sender != "user":
+        return 403, {"success": False, "error": "customer_required_to_reject_call"}
 
     call = session.get("call") or {}
     if call.get("status") != "RINGING":

@@ -7,7 +7,7 @@ function durationLabel(seconds) {
   return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`
 }
 
-export default function ChatComposer({ onSend, disabled }) {
+export default function ChatComposer({ onSend, onSendFile, disabled }) {
   const [value, setValue] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [attachment, setAttachment] = useState(null)
@@ -48,12 +48,16 @@ export default function ChatComposer({ onSend, disabled }) {
   async function submit(event) {
     event.preventDefault()
     const text = value.trim()
-    if (!text || disabled || recording) return
+    if ((!text && !attachment) || disabled || recording) return
+    setMediaError('')
     if (attachment) {
-      setMediaError('Quita el archivo antes de enviar texto. Los adjuntos aún no se pueden enviar.')
-      return
+      if (!onSendFile || !(await onSendFile(attachment))) {
+        setMediaError('No se pudo enviar el archivo. Inténtalo de nuevo.')
+        return
+      }
+      setAttachment(null)
     }
-    if (await onSend(text)) setValue('')
+    if (text && await onSend(text)) setValue('')
   }
 
   function handleMessageKeyDown(event) {
@@ -97,7 +101,7 @@ export default function ChatComposer({ onSend, disabled }) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
-      const mimeType = ['audio/webm', 'audio/mp4', 'audio/ogg'].find((type) => MediaRecorder.isTypeSupported(type))
+      const mimeType = ['audio/webm', 'audio/mp4'].find((type) => MediaRecorder.isTypeSupported(type))
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
       recorderRef.current = recorder
       chunksRef.current = []
@@ -108,11 +112,12 @@ export default function ChatComposer({ onSend, disabled }) {
         stream.getTracks().forEach((track) => track.stop())
         streamRef.current = null
         if (cancelledRef.current) return
-        const type = recorder.mimeType || chunksRef.current[0]?.type || 'audio/webm'
+        const type = (recorder.mimeType || chunksRef.current[0]?.type || 'audio/webm').split(';')[0]
         const blob = new Blob(chunksRef.current, { type })
         if (!blob.size) { setMediaError('La grabación está vacía.'); return }
         if (blob.size > MAX_AUDIO_BYTES) { setMediaError(`El audio supera el límite de ${formatFileSize(MAX_AUDIO_BYTES)}.`); return }
-        const extension = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm'
+        if (!attachmentTypes.audio.mimeTypes.includes(type)) { setMediaError('Este formato de audio no está disponible.'); return }
+        const extension = type.includes('mp4') ? 'm4a' : 'webm'
         setAttachment(new File([blob], `Nota de voz ${new Date().toISOString().replace(/[:.]/g, '-')}.${extension}`, { type }))
       }
       recorder.start()
@@ -129,7 +134,7 @@ export default function ChatComposer({ onSend, disabled }) {
   return <form className="composer" onSubmit={submit}>
     {attachment && <div className="media-preview" role="status">
       {previewUrl && attachment.type.startsWith('image/') && <img src={previewUrl} alt="Vista previa del archivo" />}
-      <div className="media-preview-copy"><strong>{attachment.name}</strong><span>{formatFileSize(attachment.size)} · {attachment.type || 'Archivo'}</span><small>Archivo listo para adjuntar. El envío estará disponible cuando se habilite el endpoint de media.</small></div>
+      <div className="media-preview-copy"><strong>{attachment.name}</strong><span>{formatFileSize(attachment.size)} · {attachment.type || 'Archivo'}</span></div>
       {previewUrl && attachment.type.startsWith('audio/') && <audio controls src={previewUrl} aria-label="Vista previa de audio" />}
       <button type="button" className="icon-button media-remove" aria-label="Quitar archivo" onClick={() => { setAttachment(null); setMediaError('') }}><X size={18} /></button>
     </div>}
@@ -138,7 +143,7 @@ export default function ChatComposer({ onSend, disabled }) {
       <button className="attach-button icon-button" type="button" aria-label="Adjuntar archivo" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)} disabled={disabled}><Paperclip size={21} strokeWidth={1.8} /></button>
       <input ref={fileInput} type="file" className="visually-hidden" tabIndex={-1} onChange={receiveFile} aria-label="Seleccionar archivo" />
       <textarea ref={messageInput} className="message-input" rows={1} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={handleMessageKeyDown} aria-label="Escribe un mensaje" placeholder="Escribe un mensaje..." disabled={disabled} />
-      {value.trim() ? <button className="send-button" type="submit" aria-label="Enviar mensaje" disabled={disabled}><Send size={19} strokeWidth={2} /></button> : <button className="send-button" type="button" aria-label="Grabar nota de voz" onClick={startRecording} disabled={disabled}><Mic size={20} strokeWidth={1.9} /></button>}
+      {value.trim() || attachment ? <button className="send-button" type="submit" aria-label="Enviar mensaje" disabled={disabled}><Send size={19} strokeWidth={2} /></button> : <button className="send-button" type="button" aria-label="Grabar nota de voz" onClick={startRecording} disabled={disabled}><Mic size={20} strokeWidth={1.9} /></button>}
     </div>}
     {menuOpen && <AttachmentMenu onSelect={chooseKind} onClose={() => setMenuOpen(false)} />}
   </form>

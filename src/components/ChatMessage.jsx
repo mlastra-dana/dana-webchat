@@ -11,7 +11,9 @@ export default function ChatMessage({ message, advisor = false, companyName, ope
     {!outgoing && <Avatar advisor={advisor} companyName={companyName} operatorName={operatorName} />}
     <div className={`message-bubble ${outgoing ? 'message-bubble-outgoing' : ''}`}>
       <p>{message.text}</p>
-      {message.mediaUrl && <a className="message-media-link" href={message.mediaUrl} target="_blank" rel="noopener noreferrer">Ver archivo adjunto</a>}
+      {message.mediaUrl && message.mediaType === 'audio' && <audio className="message-media-audio" controls preload="none" src={message.mediaUrl} aria-label={message.fileName || 'Nota de voz'} />}
+      {message.mediaUrl && message.mediaType === 'image' && <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer"><img className="message-media-image" src={message.mediaUrl} alt={message.fileName || 'Imagen adjunta'} loading="lazy" /></a>}
+      {message.mediaUrl && !['audio', 'image'].includes(message.mediaType) && <a className="message-media-link" href={message.mediaUrl} target="_blank" rel="noopener noreferrer">Abrir documento</a>}
       <time className="message-time">{message.time}</time>
     </div>
   </div>
