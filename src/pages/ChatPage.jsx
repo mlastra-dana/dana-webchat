@@ -141,7 +141,7 @@ export default function ChatPage({ sessionToken }) {
   }
 
   function renderMessage(item, index) {
-    if (!item?.text) return null
+    if (!item?.text || item.metadata?.event === 'RETURNED_TO_BOT') return null
     const key = item.id || `${item.createdAt || 'message'}-${index}`
     if (item.role === 'assistant' || item.role === 'user') {
       const fromOperator = item.role === 'assistant' && (item.metadata?.source === 'operator' || Boolean(item.metadata?.operatorId))
